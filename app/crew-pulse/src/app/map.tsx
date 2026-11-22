@@ -3,11 +3,15 @@ import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function MapScreen() {
-  return (
-    <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>CrewPulse Karte</Text>
-      <Text style={styles.subtitle}>Live-Standort & Geistermodus (folgt als Nächstes)</Text>
-    </SafeAreaView>
+  return React.createElement(
+    SafeAreaView,
+    { style: styles.container },
+    React.createElement(Text, { style: styles.title }, 'CrewPulse Karte'),
+    React.createElement(
+      Text,
+      { style: styles.subtitle },
+      'Live-Standort & Geistermodus (folgt als Nächstes)',
+    ),
   );
 }
 
