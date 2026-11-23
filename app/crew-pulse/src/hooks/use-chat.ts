@@ -3,11 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { socket } from '@/services/api';
 import type {
   ChatMessage,
+  ChatUser,
   JoinAck,
   PresenceEvent,
   SendAck,
   TypingEvent,
 } from '@/services/chat-types';
+import type { Session } from '@/services/session';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 
@@ -23,7 +25,9 @@ function makeClientId() {
 /** Fügt eine Nachricht ein oder ersetzt die passende optimistische Version. */
 function upsertMessage(list: ChatMessage[], msg: ChatMessage): ChatMessage[] {
   const byClientId = msg.clientId
-    ? list.findIndex((m) => m.clientId && m.clientId === msg.clientId)
+    ? list.findIndex(
+        (m) => m.clientId === msg.clientId && (!msg.senderId || m.senderId === msg.senderId),
+      )
     : -1;
   if (byClientId !== -1) {
     const next = [...list];
@@ -35,56 +39,85 @@ function upsertMessage(list: ChatMessage[], msg: ChatMessage): ChatMessage[] {
 }
 
 /** Server-Verlauf übernehmen, aber noch offene/fehlgeschlagene lokale Nachrichten behalten. */
-function mergeHistory(prev: ChatMessage[], history: ChatMessage[]): ChatMessage[] {
+function mergeHistory(prev: ChatMessage[], history: ChatMessage[], myId: string): ChatMessage[] {
   const fromServer = history.map((m) => ({ ...m, status: 'sent' as const }));
-  const known = new Set(history.map((h) => h.clientId).filter(Boolean));
+  const known = new Set(
+    history.filter((h) => h.senderId === myId && h.clientId).map((h) => h.clientId),
+  );
   const stillOpen = prev.filter(
     (m) => (m.status === 'pending' || m.status === 'failed') && !known.has(m.clientId),
   );
   return [...fromServer, ...stillOpen];
 }
 
-export function useChat(name: string | null) {
+type Options = {
+  /** Wird aufgerufen, wenn der Server den Token ablehnt. */
+  onUnauthorized?: () => void;
+};
+
+export function useChat(session: Session | null, { onUnauthorized }: Options = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [connection, setConnection] = useState<ConnectionState>('disconnected');
-  const [online, setOnline] = useState<string[]>([]);
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [online, setOnline] = useState<ChatUser[]>([]);
+  // userId -> Name derjenigen, die gerade tippen
+  const [typing, setTyping] = useState<Record<string, string>>({});
 
   const remoteTypingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const ownTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ownIsTyping = useRef(false);
 
+  // Aktuelle Werte für Callbacks, ohne bei Namensänderung neu zu verbinden.
+  const userRef = useRef<ChatUser | null>(session?.user ?? null);
+  userRef.current = session?.user ?? null;
+  const onUnauthorizedRef = useRef(onUnauthorized);
+  onUnauthorizedRef.current = onUnauthorized;
+
+  const token = session?.token ?? null;
+  const myId = session?.user.id ?? null;
+
   // --- Verbindung & Events ---------------------------------------------------
   useEffect(() => {
-    if (!name) return;
+    if (!token || !myId) return;
 
     const join = () => {
       setConnection('connected');
-      socket.timeout(ACK_TIMEOUT_MS).emit('join', { name }, (err: Error | null, res?: JoinAck) => {
+      socket.timeout(ACK_TIMEOUT_MS).emit('join', {}, (err: Error | null, res?: JoinAck) => {
         if (err || !res?.ok) return;
-        if (res.history) setMessages((prev) => mergeHistory(prev, res.history!));
+        if (res.history) setMessages((prev) => mergeHistory(prev, res.history!, myId));
         if (res.online) setOnline(res.online);
       });
     };
 
     const onDisconnect = () => setConnection('disconnected');
-    const onConnectError = () => setConnection('disconnected');
+    const onConnectError = (err: Error) => {
+      setConnection('disconnected');
+      if (err.message === 'unauthorized') onUnauthorizedRef.current?.();
+    };
     const onReconnectAttempt = () => setConnection('connecting');
 
     const onMessage = (msg: ChatMessage) => setMessages((prev) => upsertMessage(prev, msg));
 
     const onPresence = ({ online }: PresenceEvent) => setOnline(online);
 
-    const onTyping = ({ name: who, isTyping }: TypingEvent) => {
-      if (who === name) return;
-      clearTimeout(remoteTypingTimers.current[who]);
+    const onUserUpdated = (user: ChatUser) => {
+      setMessages((prev) =>
+        prev.some((m) => m.senderId === user.id && m.sender !== user.name)
+          ? prev.map((m) => (m.senderId === user.id ? { ...m, sender: user.name } : m))
+          : prev,
+      );
+      setTyping((prev) => (prev[user.id] ? { ...prev, [user.id]: user.name } : prev));
+    };
+
+    const onTyping = ({ userId, name, isTyping }: TypingEvent) => {
+      if (userId === myId) return;
+      clearTimeout(remoteTypingTimers.current[userId]);
       if (isTyping) {
-        setTypingUsers((prev) => (prev.includes(who) ? prev : [...prev, who]));
-        remoteTypingTimers.current[who] = setTimeout(() => {
-          setTypingUsers((prev) => prev.filter((u) => u !== who));
+        setTyping((prev) => ({ ...prev, [userId]: name }));
+        remoteTypingTimers.current[userId] = setTimeout(() => {
+          setTyping(({ [userId]: _, ...rest }) => rest);
         }, REMOTE_TYPING_EXPIRE_MS);
       } else {
-        setTypingUsers((prev) => prev.filter((u) => u !== who));
+        setTyping(({ [userId]: _, ...rest }) => rest);
       }
     };
 
@@ -95,7 +128,9 @@ export function useChat(name: string | null) {
     socket.on('message:new', onMessage);
     socket.on('presence', onPresence);
     socket.on('typing', onTyping);
+    socket.on('user:updated', onUserUpdated);
 
+    socket.auth = { token };
     setConnection('connecting');
     socket.connect();
 
@@ -108,14 +143,15 @@ export function useChat(name: string | null) {
       socket.off('message:new', onMessage);
       socket.off('presence', onPresence);
       socket.off('typing', onTyping);
+      socket.off('user:updated', onUserUpdated);
       Object.values(timers).forEach(clearTimeout);
       if (ownTypingTimer.current) clearTimeout(ownTypingTimer.current);
       socket.disconnect();
       setConnection('disconnected');
-      setTypingUsers([]);
+      setTyping({});
       setOnline([]);
     };
-  }, [name]);
+  }, [token, myId]);
 
   // --- Senden ----------------------------------------------------------------
   const emitMessage = useCallback((clientId: string, text: string) => {
@@ -143,7 +179,8 @@ export function useChat(name: string | null) {
   const sendMessage = useCallback(
     (raw: string) => {
       const text = raw.trim().slice(0, MAX_LENGTH);
-      if (!text || !name) return;
+      const me = userRef.current;
+      if (!text || !me) return;
       stopTyping();
       const clientId = makeClientId();
       setMessages((prev) => [
@@ -151,7 +188,8 @@ export function useChat(name: string | null) {
         {
           id: clientId,
           clientId,
-          sender: name,
+          senderId: me.id,
+          sender: me.name,
           text,
           createdAt: new Date().toISOString(),
           status: 'pending',
@@ -159,7 +197,7 @@ export function useChat(name: string | null) {
       ]);
       emitMessage(clientId, text);
     },
-    [name, emitMessage, stopTyping],
+    [emitMessage, stopTyping],
   );
 
   const retryMessage = useCallback(
@@ -189,7 +227,7 @@ export function useChat(name: string | null) {
     messages,
     connection,
     online,
-    typingUsers,
+    typingUsers: Object.values(typing),
     sendMessage,
     retryMessage,
     notifyTyping,

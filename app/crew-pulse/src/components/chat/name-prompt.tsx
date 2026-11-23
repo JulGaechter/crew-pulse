@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,14 +14,19 @@ type Props = {
   initialName?: string;
   onSubmit: (name: string) => void;
   onCancel?: () => void;
+  /** Während der Server antwortet */
+  busy?: boolean;
+  /** Fehlermeldung unter dem Eingabefeld */
+  error?: string | null;
 };
 
-export function NamePrompt({ initialName = '', onSubmit, onCancel }: Props) {
+export function NamePrompt({ initialName = '', onSubmit, onCancel, busy = false, error }: Props) {
   const [value, setValue] = useState(initialName);
   const trimmed = value.trim();
   const valid = trimmed.length >= 2 && trimmed.length <= 24;
+  const canSubmit = valid && !busy;
 
-  const submit = () => valid && onSubmit(trimmed);
+  const submit = () => canSubmit && onSubmit(trimmed);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -42,11 +48,16 @@ export function NamePrompt({ initialName = '', onSubmit, onCancel }: Props) {
           maxLength={24}
           returnKeyType="done"
         />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
         <Pressable
-          style={({ pressed }) => [styles.button, !valid && styles.buttonDisabled, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.button, !canSubmit && styles.buttonDisabled, pressed && styles.pressed]}
           onPress={submit}
-          disabled={!valid}>
-          <Text style={styles.buttonText}>Los geht&apos;s</Text>
+          disabled={!canSubmit}>
+          {busy ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>{onCancel ? 'Speichern' : 'Los geht’s'}</Text>
+          )}
         </Pressable>
         {onCancel && (
           <Pressable onPress={onCancel} style={styles.cancel}>
@@ -78,6 +89,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 4,
   },
+  error: { color: '#f87171', fontSize: 14 },
   buttonDisabled: { opacity: 0.4 },
   pressed: { opacity: 0.7 },
   buttonText: { color: '#fff', fontWeight: '600', fontSize: 16 },

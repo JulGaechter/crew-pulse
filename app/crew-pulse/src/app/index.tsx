@@ -13,12 +13,33 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AccountScreen } from '@/components/auth/account-screen';
+import { LoginScreen } from '@/components/auth/login-screen';
 import { MessageBubble } from '@/components/chat/message-bubble';
 import { NamePrompt } from '@/components/chat/name-prompt';
-import { useChat, type ConnectionState } from '@/hooks/use-chat';
 import { BottomTabInset } from '@/constants/theme';
+import { useAuthAvailability } from '@/hooks/use-auth-availability';
+import { useChat, type ConnectionState } from '@/hooks/use-chat';
+import {
+  signInWith,
+  SignInCancelled,
+  signOutProviders,
+  type AuthProvider,
+} from '@/services/auth-providers';
 import type { ChatMessage } from '@/services/chat-types';
-import { loadName, saveName } from '@/services/profile-storage';
+import {
+  ApiError,
+  clearSession,
+  loadLegacyName,
+  loadSession,
+  loginWithProvider,
+  logout,
+  refreshMe,
+  register,
+  rename,
+  UnauthorizedError,
+  type Session,
+} from '@/services/session';
 
 const STATUS_LABEL: Record<ConnectionState, string> = {
   connected: 'Verbunden',
@@ -39,25 +60,139 @@ function typingText(users: string[]) {
   return 'Mehrere schreiben…';
 }
 
+const NETWORK_ERROR = 'Keine Verbindung zum Server. Bitte nochmals versuchen.';
+
+function loginErrorMessage(e: unknown, provider: AuthProvider) {
+  const label = provider === 'apple' ? 'Apple' : 'Google';
+  if (e instanceof ApiError) {
+    if (e.code === 'provider_not_configured') return `${label}-Login ist auf dem Server noch nicht eingerichtet.`;
+    if (e.code === 'provider_unreachable') return `${label} ist gerade nicht erreichbar. Bitte später nochmals.`;
+    if (e.status === 401) return `${label} hat die Anmeldung nicht bestätigt. Bitte nochmals versuchen.`;
+    return NETWORK_ERROR;
+  }
+  return `Anmeldung mit ${label} fehlgeschlagen. Bitte nochmals versuchen.`;
+}
+
+type Screen = 'chat' | 'account' | 'rename' | 'anonymous-name';
+
 export default function ChatScreen() {
-  const [name, setName] = useState<string | null>(null);
-  const [nameLoaded, setNameLoaded] = useState(false);
-  const [editingName, setEditingName] = useState(false);
+  const { apple, google, any: hasProvider } = useAuthAvailability();
 
+  const [session, setSession] = useState<Session | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [screen, setScreen] = useState<Screen>('chat');
+  const [prefillName, setPrefillName] = useState('');
+  const [busyName, setBusyName] = useState(false);
+  const [busyProvider, setBusyProvider] = useState<AuthProvider | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const go = (next: Screen) => {
+    setError(null);
+    setScreen(next);
+  };
+
+  // Gespeichertes Konto laden. Wer noch einen Namen aus der ganz alten Version hat,
+  // bekommt automatisch ein Konto mit diesem Namen.
   useEffect(() => {
-    loadName().then((stored) => {
-      setName(stored);
-      setNameLoaded(true);
-    });
+    (async () => {
+      const stored = await loadSession();
+      if (stored) {
+        setSession(stored);
+        // Profil im Hintergrund aktualisieren (Name, verknüpfte Logins)
+        refreshMe(stored)
+          .then(setSession)
+          .catch(async (e) => {
+            if (e instanceof UnauthorizedError) {
+              await clearSession();
+              setSession(null);
+            }
+          });
+      } else {
+        const legacyName = await loadLegacyName();
+        if (legacyName) {
+          try {
+            setSession(await register(legacyName));
+          } catch {
+            setPrefillName(legacyName);
+          }
+        }
+      }
+      setLoaded(true);
+    })();
   }, []);
 
-  const handleName = useCallback((newName: string) => {
-    setName(newName);
-    setEditingName(false);
-    saveName(newName);
-  }, []);
+  // Anmelden oder (wenn schon ein Konto aktiv ist) verknüpfen
+  const handleProvider = useCallback(
+    async (provider: AuthProvider) => {
+      setBusyProvider(provider);
+      setError(null);
+      try {
+        const result = await signInWith(provider);
+        const { session: next } = await loginWithProvider(provider, result, session);
+        setSession(next);
+        setScreen('chat');
+      } catch (e) {
+        if (e instanceof SignInCancelled) return;
+        if (e instanceof UnauthorizedError) {
+          // Bisheriger Token ungültig -> ohne ihn nochmals versuchen
+          await clearSession();
+          setSession(null);
+        }
+        setError(loginErrorMessage(e, provider));
+      } finally {
+        setBusyProvider(null);
+      }
+    },
+    [session],
+  );
 
-  if (!nameLoaded) {
+  // Name ändern bzw. Konto ohne Login anlegen
+  const handleName = useCallback(
+    async (name: string) => {
+      setBusyName(true);
+      setError(null);
+      try {
+        setSession(session ? await rename(session, name) : await register(name));
+        setScreen('chat');
+      } catch (e) {
+        if (e instanceof UnauthorizedError) {
+          await clearSession();
+          setSession(null);
+          setScreen('chat');
+        } else {
+          setError(NETWORK_ERROR);
+        }
+      } finally {
+        setBusyName(false);
+      }
+    },
+    [session],
+  );
+
+  const handleLogout = useCallback(async () => {
+    if (session) await logout(session);
+    await signOutProviders();
+    setSession(null);
+    setPrefillName('');
+    setScreen('chat');
+  }, [session]);
+
+  // Server lehnt den Token ab (z. B. Datenbank zurückgesetzt)
+  const handleUnauthorized = useCallback(async () => {
+    const wasLinked = (session?.user.providers ?? []).length > 0;
+    const name = session?.user.name ?? '';
+    await clearSession();
+    setSession(null);
+    // Mit Login verbunden -> einfach neu anmelden lassen. Sonst: neues Gerätekonto mit gleichem Namen.
+    if (wasLinked || !name) return;
+    try {
+      setSession(await register(name));
+    } catch {
+      setPrefillName(name);
+    }
+  }, [session]);
+
+  if (!loaded) {
     return (
       <View style={[styles.safeArea, styles.center]}>
         <ActivityIndicator color="#fff" />
@@ -65,22 +200,85 @@ export default function ChatScreen() {
     );
   }
 
-  if (!name || editingName) {
+  // --- Nicht angemeldet ---
+  if (!session) {
+    if (screen === 'anonymous-name' || (!hasProvider && prefillName)) {
+      return (
+        <NamePrompt
+          initialName={prefillName}
+          onSubmit={handleName}
+          onCancel={hasProvider ? () => go('chat') : undefined}
+          busy={busyName}
+          error={error}
+        />
+      );
+    }
     return (
-      <NamePrompt
-        initialName={name ?? ''}
-        onSubmit={handleName}
-        onCancel={name ? () => setEditingName(false) : undefined}
+      <LoginScreen
+        apple={apple}
+        google={google}
+        busy={busyProvider}
+        error={error}
+        onProvider={handleProvider}
+        onSkip={() => go('anonymous-name')}
       />
     );
   }
 
-  return <ChatRoom name={name} onEditName={() => setEditingName(true)} />;
+  // --- Angemeldet ---
+  if (screen === 'rename') {
+    return (
+      <NamePrompt
+        initialName={session.user.name}
+        onSubmit={handleName}
+        onCancel={() => go('account')}
+        busy={busyName}
+        error={error}
+      />
+    );
+  }
+
+  if (screen === 'account') {
+    return (
+      <AccountScreen
+        session={session}
+        apple={apple}
+        google={google}
+        busy={busyProvider}
+        error={error}
+        onRename={() => go('rename')}
+        onConnect={handleProvider}
+        onLogout={handleLogout}
+        onClose={() => go('chat')}
+      />
+    );
+  }
+
+  const showLinkHint = hasProvider && (session.user.providers ?? []).length === 0;
+
+  return (
+    <ChatRoom
+      session={session}
+      onOpenAccount={() => go('account')}
+      onUnauthorized={handleUnauthorized}
+      showLinkHint={showLinkHint}
+    />
+  );
 }
 
-function ChatRoom({ name, onEditName }: { name: string; onEditName: () => void }) {
+type ChatRoomProps = {
+  session: Session;
+  onOpenAccount: () => void;
+  onUnauthorized: () => void;
+  /** Hinweis "Konto mit Apple/Google verbinden" anzeigen */
+  showLinkHint: boolean;
+};
+
+function ChatRoom({ session, onOpenAccount, onUnauthorized, showLinkHint }: ChatRoomProps) {
   const { messages, connection, online, typingUsers, sendMessage, retryMessage, notifyTyping, maxLength } =
-    useChat(name);
+    useChat(session, { onUnauthorized });
+  const myId = session.user.id;
+  const name = session.user.name;
 
   const [input, setInput] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -118,17 +316,18 @@ function ChatRoom({ name, onEditName }: { name: string; onEditName: () => void }
     ({ item, index }: { item: ChatMessage; index: number }) => {
       // In der invertierten Liste ist index + 1 die ältere Nachricht.
       const older = data[index + 1];
-      const showSender = !older || older.sender !== item.sender;
+      const authorKey = (m: ChatMessage) => m.senderId ?? `name:${m.sender}`;
+      const showSender = !older || authorKey(older) !== authorKey(item);
       return (
         <MessageBubble
           message={item}
-          isOwn={item.sender === name}
+          isOwn={item.senderId === myId}
           showSender={showSender}
           onRetry={retryMessage}
         />
       );
     },
-    [data, name, retryMessage],
+    [data, myId, retryMessage],
   );
 
   const canSend = input.trim().length > 0;
@@ -147,12 +346,20 @@ function ChatRoom({ name, onEditName }: { name: string; onEditName: () => void }
             </Text>
           </View>
         </View>
-        <Pressable onPress={onEditName} hitSlop={10} style={styles.nameChip}>
+        <Pressable onPress={onOpenAccount} hitSlop={10} style={styles.nameChip}>
           <Text style={styles.nameChipText} numberOfLines={1}>
             {name}
           </Text>
         </Pressable>
       </View>
+
+      {showLinkHint && (
+        <Pressable onPress={onOpenAccount} style={styles.linkHint}>
+          <Text style={styles.linkHintText}>
+            Konto sichern: Mit Apple oder Google verbinden, um es auf allen Geräten zu nutzen ›
+          </Text>
+        </Pressable>
+      )}
 
       <KeyboardAvoidingView
         style={styles.container}
@@ -224,6 +431,14 @@ const styles = StyleSheet.create({
     maxWidth: 140,
   },
   nameChipText: { color: '#4da6ff', fontWeight: '600', fontSize: 13 },
+  linkHint: {
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#262626',
+  },
+  linkHintText: { color: '#93c5fd', fontSize: 13 },
   list: { paddingHorizontal: 12, paddingVertical: 12 },
   empty: {
     color: '#666',
