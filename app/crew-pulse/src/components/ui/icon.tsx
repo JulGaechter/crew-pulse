@@ -31,7 +31,13 @@ export type IconName =
   | 'pause'
   | 'user'
   | 'code'
-  | 'pulse';
+  | 'pulse'
+  | 'flash'
+  | 'pen'
+  | 'text'
+  | 'undo'
+  | 'timer'
+  | 'download';
 
 type Props = {
   name: IconName;
@@ -152,6 +158,23 @@ export function Icon({ name, size = 22, color = C.accent, strokeWidth = 1.9 }: P
         );
       case 'pulse':
         return <Path d="M2.5 12.5h4l2-4.5 3.5 9 2.5-6 1.5 1.5h5.5" {...stroke} />;
+      case 'flash':
+        return <Path d="M13 3L5 13.5h6L10 21l8-10.5h-6z" {...stroke} />;
+      case 'pen':
+        return <Path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3" {...stroke} />;
+      case 'text':
+        return <Path d="M5 6V4h14v2M12 4v16M9 20h6" {...stroke} />;
+      case 'undo':
+        return <Path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" {...stroke} />;
+      case 'timer':
+        return (
+          <>
+            <Circle cx={12} cy={13} r={8} {...stroke} />
+            <Path d="M12 9v4l2.5 2M9 2h6" {...stroke} />
+          </>
+        );
+      case 'download':
+        return <Path d="M12 3v12M7 10l5 5 5-5M5 20h14" {...stroke} />;
     }
   })();
 

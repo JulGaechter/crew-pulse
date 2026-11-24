@@ -21,6 +21,15 @@ module.exports = ({ config }) => {
   addPlugin('expo-audio', {
     microphonePermission: 'CrewPulse braucht das Mikrofon, damit du Sprachnachrichten aufnehmen kannst.',
   });
+  addPlugin('expo-media-library', {
+    savePhotosPermission: 'CrewPulse speichert Snaps in deinen Fotos, wenn du auf Speichern tippst.',
+    photosPermission: 'CrewPulse braucht Zugriff auf deine Fotos, um Snaps zu speichern.',
+    isAccessMediaLocationEnabled: false,
+  });
+  addPlugin('expo-camera', {
+    cameraPermission: 'CrewPulse braucht die Kamera, damit du Snaps aufnehmen kannst.',
+    recordAudioAndroid: false,
+  });
 
   // Google braucht auf iOS ein URL-Schema = umgedrehte iOS-Client-ID.
   const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;

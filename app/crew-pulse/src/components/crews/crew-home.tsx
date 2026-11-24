@@ -7,7 +7,7 @@ import { CrewInfo } from '@/components/crews/crew-info';
 import { CrewList } from '@/components/crews/crew-list';
 import { useCrews } from '@/hooks/use-crews';
 import { usePushNotifications } from '@/hooks/use-push-notifications';
-import { useSocketConnection } from '@/hooks/use-socket-connection';
+import { useConnection } from '@/hooks/use-session';
 import { ApiError, UnauthorizedError, type Session } from '@/services/session';
 import { createCrew, joinCrew, renameCrew } from '@/services/crews';
 import type { CrewSummary } from '@/services/chat-types';
@@ -37,7 +37,7 @@ function formError(e: unknown, mode: 'create' | 'join' | 'rename') {
 }
 
 export function CrewHome({ session, showLinkHint, onOpenAccount, onUnauthorized }: Props) {
-  const connection = useSocketConnection(session, onUnauthorized);
+  const connection = useConnection();
   const [view, setView] = useState<View>({ name: 'list' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

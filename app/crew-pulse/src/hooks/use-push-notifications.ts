@@ -1,4 +1,5 @@
 import * as Notifications from 'expo-notifications';
+import { router } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 
@@ -7,6 +8,7 @@ import { socket } from '@/services/api';
 import type { CrewSummary } from '@/services/chat-types';
 import {
   crewIdFromResponse,
+  isSnapResponse,
   pushSupported,
   registerForPush,
   setAppBadge,
@@ -40,7 +42,7 @@ export function usePushNotifications({ session, connection, openCrewId, crews, o
   // 2. Dem Server sagen, welche Crew offen ist – im Hintergrund keine.
   //    Für die offene Crew schickt der Server dann keinen Push.
   useEffect(() => {
-  // currentState kann beim Start noch leer sein -> dann als aktiv behandeln
+    // currentState kann beim Start noch leer sein -> dann als aktiv behandeln
     const report = (state: string | null | undefined) => {
       const crewId = !state || state === 'active' ? openCrewId : null;
       setOpenCrewForNotifications(crewId);
@@ -61,19 +63,28 @@ export function usePushNotifications({ session, connection, openCrewId, crews, o
   useEffect(() => {
     if (!pushSupported) return;
     let active = true;
+    // Snap -> Snap-Tab öffnen, Chat-Nachricht -> Crew öffnen
+    const handle = (response: Notifications.NotificationResponse | null) => {
+      if (isSnapResponse(response)) {
+        router.navigate('/snaps');
+        return true;
+      }
+      const crewId = crewIdFromResponse(response);
+      if (crewId) {
+        onOpenCrewRef.current(crewId);
+        return true;
+      }
+      return false;
+    };
+
     Notifications.getLastNotificationResponseAsync()
       .then((response) => {
-        const crewId = crewIdFromResponse(response);
-        if (active && crewId) {
-          onOpenCrewRef.current(crewId);
-          Notifications.clearLastNotificationResponseAsync().catch(() => {});
-        }
+        if (active && handle(response)) Notifications.clearLastNotificationResponseAsync().catch(() => {});
       })
       .catch(() => {});
 
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const crewId = crewIdFromResponse(response);
-      if (crewId) onOpenCrewRef.current(crewId);
+      handle(response);
     });
     return () => {
       active = false;

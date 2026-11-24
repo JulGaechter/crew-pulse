@@ -6,6 +6,8 @@ import { LoginScreen } from '@/components/auth/login-screen';
 import { NamePrompt } from '@/components/chat/name-prompt';
 import { C } from '@/constants/crew-theme';
 import { useAuthAvailability } from '@/hooks/use-auth-availability';
+import { ConnectionContext, SessionContext, type SessionContextValue } from '@/hooks/use-session';
+import { useSocketConnection } from '@/hooks/use-socket-connection';
 import {
   signInWith,
   SignInCancelled,
@@ -39,23 +41,20 @@ function loginErrorMessage(e: unknown, provider: AuthProvider) {
   return `Anmeldung mit ${label} fehlgeschlagen. Bitte nochmals versuchen.`;
 }
 
-export type AuthContext = {
-  session: Session;
-  /** Hinweis "Konto mit Apple/Google verbinden" anzeigen */
-  showLinkHint: boolean;
-  openAccount: () => void;
-  /** Server lehnt den Token ab */
-  onUnauthorized: () => void;
-};
+/** Hält die Socket-Verbindung für die ganze App offen, solange jemand angemeldet ist */
+function ConnectionProvider({ session, onUnauthorized, children }: { session: Session; onUnauthorized: () => void; children: ReactNode }) {
+  const connection = useSocketConnection(session, onUnauthorized);
+  return <ConnectionContext.Provider value={connection}>{children}</ConnectionContext.Provider>;
+}
 
 type Overlay = 'none' | 'account' | 'rename';
 
 /**
- * Kümmert sich um Anmeldung, Konto und Namensänderung.
- * Ist jemand angemeldet, wird `children(ctx)` angezeigt; Konto-Screens liegen darüber,
- * damit Verbindung und geöffnete Crew erhalten bleiben.
+ * Kümmert sich um Anmeldung, Konto und Namensänderung – für die ganze App (Root-Layout).
+ * Ist jemand angemeldet, werden die Tabs angezeigt; Konto und Verbindung stehen über
+ * useSession()/useConnection() bereit. Konto-Screens liegen darüber, damit nichts neu lädt.
  */
-export function AuthGate({ children }: { children: (ctx: AuthContext) => ReactNode }) {
+export function AuthGate({ children }: { children: ReactNode }) {
   const { apple, google, any: hasProvider } = useAuthAvailability();
 
   const [session, setSession] = useState<Session | null>(null);
@@ -222,10 +221,20 @@ export function AuthGate({ children }: { children: (ctx: AuthContext) => ReactNo
 
   // --- Angemeldet ---
   const showLinkHint = hasProvider && (session.user.providers ?? []).length === 0;
+  const contextValue: SessionContextValue = {
+    session,
+    showLinkHint,
+    openAccount,
+    onUnauthorized: handleUnauthorized,
+  };
 
   return (
     <View style={styles.fill}>
-      {children({ session, showLinkHint, openAccount, onUnauthorized: handleUnauthorized })}
+      <SessionContext.Provider value={contextValue}>
+        <ConnectionProvider session={session} onUnauthorized={handleUnauthorized}>
+          {children}
+        </ConnectionProvider>
+      </SessionContext.Provider>
 
       {overlay !== 'none' && (
         <View style={StyleSheet.absoluteFill}>

@@ -11,6 +11,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { View } from 'react-native';
 
 import AppTabs from '@/components/app-tabs';
+import { AuthGate } from '@/components/auth/auth-gate';
 import { CrewSplash } from '@/components/crew-splash';
 import { C } from '@/constants/crew-theme';
 
@@ -44,7 +45,9 @@ export default function TabLayout() {
 
   return (
     <ThemeProvider value={crewTheme}>
-      <AppTabs />
+      <AuthGate>
+        <AppTabs />
+      </AuthGate>
       <CrewSplash />
     </ThemeProvider>
   );

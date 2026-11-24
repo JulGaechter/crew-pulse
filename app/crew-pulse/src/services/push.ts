@@ -88,6 +88,11 @@ export async function setAppBadge(count: number) {
   }
 }
 
+/** Wurde eine Snap-Benachrichtigung angetippt? */
+export function isSnapResponse(response: Notifications.NotificationResponse | null) {
+  return response?.notification.request.content.data?.type === 'snap';
+}
+
 /** Crew-ID aus einer angetippten Benachrichtigung */
 export function crewIdFromResponse(response: Notifications.NotificationResponse | null) {
   const crewId = response?.notification.request.content.data?.crewId;

@@ -1,18 +1,15 @@
-import { AuthGate } from '@/components/auth/auth-gate';
 import { CrewHome } from '@/components/crews/crew-home';
+import { useSession } from '@/hooks/use-session';
 
-/** Chat-Tab: Anmeldung -> Crew-Liste -> Chat einer Crew */
+/** Chat-Tab: Crew-Liste -> Chat einer Crew (Anmeldung übernimmt das Root-Layout) */
 export default function ChatTab() {
+  const { session, showLinkHint, openAccount, onUnauthorized } = useSession();
   return (
-    <AuthGate>
-      {({ session, showLinkHint, openAccount, onUnauthorized }) => (
-        <CrewHome
-          session={session}
-          showLinkHint={showLinkHint}
-          onOpenAccount={openAccount}
-          onUnauthorized={onUnauthorized}
-        />
-      )}
-    </AuthGate>
+    <CrewHome
+      session={session}
+      showLinkHint={showLinkHint}
+      onOpenAccount={openAccount}
+      onUnauthorized={onUnauthorized}
+    />
   );
 }
