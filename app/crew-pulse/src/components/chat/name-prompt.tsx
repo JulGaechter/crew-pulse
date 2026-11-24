@@ -4,11 +4,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  StyleSheet,
   Text,
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { formStyles, placeholderColor, spinnerOnAccent } from '@/components/ui/form-styles';
 
 type Props = {
   initialName?: string;
@@ -38,7 +39,7 @@ export function NamePrompt({ initialName = '', onSubmit, onCancel, busy = false,
         <TextInput
           style={styles.input}
           placeholder="Dein Name"
-          placeholderTextColor="#666"
+          placeholderTextColor={placeholderColor}
           value={value}
           onChangeText={setValue}
           onSubmitEditing={submit}
@@ -54,7 +55,7 @@ export function NamePrompt({ initialName = '', onSubmit, onCancel, busy = false,
           onPress={submit}
           disabled={!canSubmit}>
           {busy ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={spinnerOnAccent} />
           ) : (
             <Text style={styles.buttonText}>{onCancel ? 'Speichern' : 'Los geht’s'}</Text>
           )}
@@ -69,30 +70,4 @@ export function NamePrompt({ initialName = '', onSubmit, onCancel, busy = false,
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#111' },
-  container: { flex: 1, justifyContent: 'center', padding: 24, gap: 12 },
-  title: { color: '#fff', fontSize: 26, fontWeight: '700' },
-  subtitle: { color: '#999', fontSize: 15, marginBottom: 12 },
-  input: {
-    backgroundColor: '#242424',
-    color: '#fff',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 17,
-  },
-  button: {
-    backgroundColor: '#2563eb',
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  error: { color: '#f87171', fontSize: 14 },
-  buttonDisabled: { opacity: 0.4 },
-  pressed: { opacity: 0.7 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  cancel: { alignItems: 'center', paddingVertical: 8 },
-  cancelText: { color: '#999' },
-});
+const styles = formStyles;

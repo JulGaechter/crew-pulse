@@ -1,28 +1,22 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { colorForName } from '@/components/chat/message-bubble';
+import { avatarColors, F, initials } from '@/constants/crew-theme';
 
-/** Runder Kreis mit Initialen, Farbe aus dem Namen */
-export function CrewAvatar({ name, size = 48 }: { name: string; size?: number }) {
-  const initials =
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((w) => w[0]?.toUpperCase())
-      .join('') || '?';
+/** Abgerundetes Quadrat mit Initialen; Farben aus dem Namen. round = Kreis (für Personen) */
+export function CrewAvatar({ name, size = 52, round = false }: { name: string; size?: number; round?: boolean }) {
+  const { bg, fg } = avatarColors(name);
   return (
     <View
       style={[
-        styles.circle,
-        { width: size, height: size, borderRadius: size / 2, backgroundColor: colorForName(name) },
+        styles.box,
+        { width: size, height: size, borderRadius: round ? size / 2 : size * 0.34, backgroundColor: bg },
       ]}>
-      <Text style={[styles.text, { fontSize: size * 0.38 }]}>{initials}</Text>
+      <Text style={[styles.text, { color: fg, fontSize: size * 0.36 }]}>{initials(name)}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  circle: { alignItems: 'center', justifyContent: 'center' },
-  text: { color: '#fff', fontWeight: '700' },
+  box: { alignItems: 'center', justifyContent: 'center' },
+  text: { fontFamily: F.displayBold },
 });

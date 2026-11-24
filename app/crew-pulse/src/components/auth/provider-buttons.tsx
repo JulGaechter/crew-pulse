@@ -1,6 +1,7 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { C, F, R } from '@/constants/crew-theme';
 import type { AuthProvider } from '@/services/auth-providers';
 
 type Props = {
@@ -27,7 +28,7 @@ export function ProviderButtons({ apple, google, busy, onPress, variant = 'conti
                 : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
             }
             buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
-            cornerRadius={14}
+            cornerRadius={R.lg}
             style={styles.appleButton}
             onPress={() => onPress('apple')}
           />
@@ -40,7 +41,7 @@ export function ProviderButtons({ apple, google, busy, onPress, variant = 'conti
           disabled={disabled}
           style={({ pressed }) => [styles.googleButton, (pressed || disabled) && styles.dimmed]}>
           {busy === 'google' ? (
-            <ActivityIndicator color="#111" />
+            <ActivityIndicator color={C.text} />
           ) : (
             <>
               <Text style={styles.googleG}>G</Text>
@@ -52,25 +53,28 @@ export function ProviderButtons({ apple, google, busy, onPress, variant = 'conti
         </Pressable>
       )}
 
-      {busy === 'apple' && <ActivityIndicator color="#fff" style={styles.spinner} />}
+      {busy === 'apple' && <ActivityIndicator color={C.accent} style={styles.spinner} />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrapper: { gap: 12 },
-  appleButton: { width: '100%', height: 50 },
+  appleButton: { width: '100%', height: 54 },
+  // Google: dunkle Variante passend zum Design
   googleButton: {
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: '#fff',
+    height: 54,
+    borderRadius: R.lg,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.borderStrong,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
   },
-  googleG: { fontSize: 20, fontWeight: '700', color: '#4285F4' },
-  googleText: { fontSize: 17, fontWeight: '600', color: '#111' },
+  googleG: { fontSize: 20, fontFamily: F.bold, color: '#8AB4F8' },
+  googleText: { fontSize: 17, fontFamily: F.semibold, color: C.text },
   dimmed: { opacity: 0.5 },
   spinner: { marginTop: 4 },
 });

@@ -1,28 +1,5 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ComingSoon } from '@/components/ui/coming-soon';
 
 export default function MapScreen() {
-  return React.createElement(
-    SafeAreaView,
-    { style: styles.container },
-    React.createElement(Text, { style: styles.title }, 'CrewPulse Karte'),
-    React.createElement(
-      Text,
-      { style: styles.subtitle },
-      'Live-Standort & Geistermodus (folgt als Nächstes)',
-    ),
-  );
+  return <ComingSoon icon="map" title="Karte" text="Sieh live, wo deine Crew gerade ist – mit Geistermodus, wenn du unsichtbar sein willst." />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#111',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  title: { color: '#fff', fontSize: 22, fontWeight: '700', marginBottom: 8 },
-  subtitle: { color: '#999', fontSize: 14, textAlign: 'center' },
-});

@@ -13,6 +13,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CrewAvatar } from '@/components/crews/crew-avatar';
+import { Icon } from '@/components/ui/icon';
+import { C, F, R } from '@/constants/crew-theme';
 import { BottomTabInset } from '@/constants/theme';
 import { socket } from '@/services/api';
 import type { CrewDetail, CrewSummary } from '@/services/chat-types';
@@ -147,21 +149,23 @@ export function CrewInfo({
     );
   };
 
+  const code = crew ? crew.inviteCode : '';
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        <Pressable onPress={onBack} hitSlop={12} style={styles.back}>
-          <Text style={styles.backText}>‹</Text>
+        <Pressable onPress={onBack} hitSlop={8} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Zurück">
+          <Icon name="back" size={24} strokeWidth={2} />
         </Pressable>
         <Text style={styles.headerTitle}>Crew-Info</Text>
-        <View style={styles.back} />
+        <View style={styles.headerButton} />
       </View>
 
       {!crew ? (
         error ? (
           <Text style={styles.error}>{error}</Text>
         ) : (
-          <ActivityIndicator color="#666" style={styles.spinner} />
+          <ActivityIndicator color={C.accent} style={styles.spinner} />
         )
       ) : (
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + BottomTabInset + 24 }]}>
@@ -169,7 +173,7 @@ export function CrewInfo({
             <CrewAvatar name={crew.name} size={72} />
             <Text style={styles.crewName}>{crew.name}</Text>
             {isOwner && (
-              <Pressable onPress={() => onRename(crew)} hitSlop={8}>
+              <Pressable onPress={() => onRename(crew)} hitSlop={8} style={styles.linkButton} accessibilityRole="button">
                 <Text style={styles.link}>Umbenennen</Text>
               </Pressable>
             )}
@@ -177,33 +181,53 @@ export function CrewInfo({
 
           <View style={styles.card}>
             <Text style={styles.label}>Einladungscode</Text>
-            <Text style={styles.code} selectable>
-              {formatInviteCode(crew.inviteCode)}
-            </Text>
-            <Pressable onPress={share} style={({ pressed }) => [styles.primary, pressed && styles.pressed]}>
-              <Text style={styles.primaryText}>Code teilen</Text>
-            </Pressable>
-            {isOwner && (
-              <Pressable onPress={newCode} disabled={busy} style={styles.secondaryLink}>
-                <Text style={styles.link}>Neuen Code erstellen</Text>
+            <View style={styles.codeRow} accessible accessibilityLabel={`Einladungscode ${formatInviteCode(code)}`}>
+              {code.split('').map((ch, i) => (
+                <View key={i} style={[styles.codeCell, i === 3 && styles.codeGap]}>
+                  <Text style={styles.codeChar} selectable>
+                    {ch}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            <View style={styles.codeActions}>
+              <Pressable onPress={share} style={({ pressed }) => [styles.primary, pressed && styles.pressed]} accessibilityRole="button">
+                <Icon name="share" size={18} color={C.onAccent} strokeWidth={2} />
+                <Text style={styles.primaryText}>Code teilen</Text>
               </Pressable>
-            )}
+              {isOwner && (
+                <Pressable
+                  onPress={newCode}
+                  disabled={busy}
+                  style={({ pressed }) => [styles.squareButton, pressed && styles.pressed]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Neuen Code erstellen">
+                  <Icon name="refresh" size={20} strokeWidth={2} />
+                </Pressable>
+              )}
+            </View>
           </View>
 
-          <View style={styles.card}>
-            <View style={styles.switchRow}>
-              <View style={styles.switchText}>
-                <Text style={styles.value}>Mitteilungen</Text>
-                <Text style={styles.hint}>
-                  {pushSupported
-                    ? crew.muted
-                      ? 'Stumm – keine Benachrichtigungen für diese Crew'
-                      : 'Benachrichtigung bei neuen Nachrichten'
-                    : 'In dieser App-Variante nicht verfügbar'}
-                </Text>
-              </View>
-              <Switch value={!crew.muted} onValueChange={toggleNotifications} />
+          <View style={[styles.card, styles.switchRow]}>
+            <Icon name={crew.muted ? 'bellOff' : 'bell'} size={22} color={crew.muted ? C.textMuted : C.accent} />
+            <View style={styles.switchText}>
+              <Text style={styles.value}>Mitteilungen</Text>
+              <Text style={styles.hint}>
+                {pushSupported
+                  ? crew.muted
+                    ? 'Stumm – keine Benachrichtigungen'
+                    : 'Bei neuen Nachrichten'
+                  : 'In dieser App-Variante nicht verfügbar'}
+              </Text>
             </View>
+            <Switch
+              value={!crew.muted}
+              onValueChange={toggleNotifications}
+              trackColor={{ false: C.borderStrong, true: C.accent }}
+              thumbColor={C.bg}
+              ios_backgroundColor={C.borderStrong}
+              accessibilityLabel="Mitteilungen"
+            />
           </View>
 
           <View style={styles.card}>
@@ -212,10 +236,10 @@ export function CrewInfo({
             </Text>
             {crew.members.map((m) => (
               <View key={m.id} style={styles.member}>
-                <CrewAvatar name={m.name} size={34} />
+                <CrewAvatar name={m.name} size={36} round />
                 <Text style={styles.memberName} numberOfLines={1}>
                   {m.name}
-                  {m.id === myId ? ' (du)' : ''}
+                  {m.id === myId ? <Text style={styles.memberYou}> (du)</Text> : null}
                 </Text>
                 {m.role === 'owner' && <Text style={styles.ownerTag}>Ersteller</Text>}
               </View>
@@ -224,7 +248,7 @@ export function CrewInfo({
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <Pressable onPress={confirmLeave} disabled={busy} style={styles.leave}>
+          <Pressable onPress={confirmLeave} disabled={busy} style={({ pressed }) => [styles.leave, pressed && styles.pressed]} accessibilityRole="button">
             <Text style={styles.leaveText}>Crew verlassen</Text>
           </Pressable>
         </ScrollView>
@@ -234,48 +258,91 @@ export function CrewInfo({
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#111' },
+  safeArea: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#262626',
+    paddingVertical: 6,
   },
-  back: { paddingHorizontal: 8, minWidth: 40 },
-  backText: { color: '#4da6ff', fontSize: 34, lineHeight: 36, fontWeight: '300' },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  headerButton: { width: 44, height: 44, borderRadius: R.md, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { color: C.text, fontSize: 17, fontFamily: F.display },
   spinner: { marginTop: 60 },
-  content: { padding: 16, gap: 16 },
-  hero: { alignItems: 'center', gap: 8, paddingVertical: 8 },
-  crewName: { color: '#fff', fontSize: 22, fontWeight: '700', textAlign: 'center' },
-  card: { backgroundColor: '#1c1c1c', borderRadius: 14, padding: 16, gap: 12 },
-  label: { color: '#888', fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5 },
-  code: { color: '#fff', fontSize: 34, fontWeight: '800', letterSpacing: 6, textAlign: 'center' },
-  primary: { backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  primaryText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  secondaryLink: { alignItems: 'center', paddingVertical: 4 },
-  link: { color: '#4da6ff', fontSize: 15 },
-  pressed: { opacity: 0.7 },
-  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  switchText: { flex: 1, gap: 2 },
-  value: { color: '#fff', fontSize: 16 },
-  hint: { color: '#888', fontSize: 13 },
-  member: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  memberName: { color: '#fff', fontSize: 16, flex: 1 },
-  ownerTag: {
-    color: '#fbbf24',
-    fontSize: 12,
+  content: { padding: 16, gap: 12 },
+  hero: { alignItems: 'center', gap: 6, paddingBottom: 6 },
+  crewName: { color: C.text, fontSize: 24, fontFamily: F.displayBold, textAlign: 'center', marginTop: 4 },
+  linkButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10 },
+  link: { color: C.accent, fontSize: 15, fontFamily: F.semibold },
+  card: {
+    backgroundColor: C.surface,
     borderWidth: 1,
-    borderColor: '#fbbf24',
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    borderColor: C.raised,
+    borderRadius: R.xl,
+    padding: 16,
+    gap: 12,
+  },
+  label: { color: C.textMuted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.7, fontFamily: F.semibold },
+  codeRow: { flexDirection: 'row', justifyContent: 'center', gap: 6 },
+  codeCell: {
+    width: 40,
+    height: 50,
+    borderRadius: R.sm,
+    backgroundColor: C.bg,
+    borderWidth: 1,
+    borderColor: C.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  codeGap: { marginLeft: 12 },
+  codeChar: { color: C.text, fontSize: 24, fontFamily: F.displayBold },
+  codeActions: { flexDirection: 'row', gap: 8 },
+  primary: {
+    flex: 1,
+    height: 48,
+    backgroundColor: C.accent,
+    borderRadius: R.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  primaryText: { color: C.onAccent, fontFamily: F.bold, fontSize: 15 },
+  squareButton: {
+    width: 48,
+    height: 48,
+    borderRadius: R.md,
+    backgroundColor: C.raised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressed: { opacity: 0.75 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  switchText: { flex: 1, gap: 2 },
+  value: { color: C.text, fontSize: 16, fontFamily: F.medium },
+  hint: { color: C.textMuted, fontSize: 13, fontFamily: F.regular },
+  member: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  memberName: { color: C.text, fontSize: 16, flex: 1, fontFamily: F.regular },
+  memberYou: { color: C.textMuted },
+  ownerTag: {
+    color: C.accent,
+    backgroundColor: C.accentSoft,
+    fontSize: 11,
+    fontFamily: F.semibold,
+    borderRadius: R.pill,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
     overflow: 'hidden',
   },
-  error: { color: '#f87171', fontSize: 14, textAlign: 'center', padding: 12 },
-  leave: { backgroundColor: '#1c1c1c', borderRadius: 14, padding: 16, alignItems: 'center' },
-  leaveText: { color: '#ef4444', fontSize: 16, fontWeight: '600' },
+  error: { color: C.danger, fontSize: 14, textAlign: 'center', padding: 12, fontFamily: F.medium },
+  leave: {
+    backgroundColor: C.dangerBg,
+    borderWidth: 1,
+    borderColor: C.dangerBorder,
+    borderRadius: R.lg,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  leaveText: { color: C.danger, fontSize: 16, fontFamily: F.semibold },
 });

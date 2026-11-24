@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { AccountScreen } from '@/components/auth/account-screen';
 import { LoginScreen } from '@/components/auth/login-screen';
 import { NamePrompt } from '@/components/chat/name-prompt';
+import { C } from '@/constants/crew-theme';
 import { useAuthAvailability } from '@/hooks/use-auth-availability';
 import {
   signInWith,
@@ -179,7 +180,7 @@ export function AuthGate({ children }: { children: (ctx: AuthContext) => ReactNo
   if (!loaded) {
     return (
       <View style={[styles.fill, styles.center]}>
-        <ActivityIndicator color="#fff" />
+        <ActivityIndicator color={C.accent} />
       </View>
     );
   }
@@ -256,6 +257,6 @@ export function AuthGate({ children }: { children: (ctx: AuthContext) => ReactNo
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: '#111' },
+  fill: { flex: 1, backgroundColor: C.bg },
   center: { justifyContent: 'center', alignItems: 'center' },
 });

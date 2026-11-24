@@ -2,6 +2,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ProviderButtons } from '@/components/auth/provider-buttons';
+import { Icon } from '@/components/ui/icon';
+import { C, F, R } from '@/constants/crew-theme';
 import type { AuthProvider } from '@/services/auth-providers';
 
 type Props = {
@@ -21,7 +23,15 @@ export function LoginScreen({ apple, google, busy, error, onProvider, onSkip }: 
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.hero}>
-          <Text style={styles.logo}>CrewPulse</Text>
+          {/* Logo mit dezenten Ringen dahinter */}
+          <View style={styles.logoWrap}>
+            <View style={[styles.ring, styles.ringOuter]} />
+            <View style={[styles.ring, styles.ringInner]} />
+            <View style={styles.logo}>
+              <Icon name="pulse" size={56} strokeWidth={2.4} />
+            </View>
+          </View>
+          <Text style={styles.title}>CrewPulse</Text>
           <Text style={styles.subtitle}>Chat, Snaps und Live-Standort mit deiner Crew.</Text>
         </View>
 
@@ -30,17 +40,14 @@ export function LoginScreen({ apple, google, busy, error, onProvider, onSkip }: 
             <ProviderButtons apple={apple} google={google} busy={busy} onPress={onProvider} />
           ) : (
             <Text style={styles.note}>
-              Anmelden mit Apple oder Google ist hier nicht verfügbar. Du kannst ohne Konto
-              weitermachen.
+              Anmelden mit Apple oder Google ist hier nicht verfügbar. Du kannst ohne Konto weitermachen.
             </Text>
           )}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <Pressable onPress={onSkip} disabled={busy !== null} style={styles.skip} hitSlop={8}>
-            <Text style={styles.skipText}>
-              {hasProvider ? 'Ohne Anmeldung fortfahren' : 'Weiter'}
-            </Text>
+          <Pressable onPress={onSkip} disabled={busy !== null} style={styles.skip} accessibilityRole="button">
+            <Text style={styles.skipText}>{hasProvider ? 'Ohne Anmeldung fortfahren' : 'Weiter'}</Text>
           </Pressable>
           {hasProvider && (
             <Text style={styles.hint}>
@@ -54,15 +61,36 @@ export function LoginScreen({ apple, google, busy, error, onProvider, onSkip }: 
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#111' },
-  container: { flex: 1, padding: 24, justifyContent: 'space-between' },
-  hero: { flex: 1, justifyContent: 'center', gap: 10 },
-  logo: { color: '#fff', fontSize: 40, fontWeight: '800' },
-  subtitle: { color: '#999', fontSize: 17, lineHeight: 24 },
-  actions: { gap: 12, paddingBottom: 24 },
-  note: { color: '#999', fontSize: 15, lineHeight: 21 },
-  error: { color: '#f87171', fontSize: 14, textAlign: 'center' },
-  skip: { alignItems: 'center', paddingVertical: 10 },
-  skipText: { color: '#4da6ff', fontSize: 16, fontWeight: '600' },
-  hint: { color: '#666', fontSize: 12, textAlign: 'center' },
+  safeArea: { flex: 1, backgroundColor: C.bg },
+  container: { flex: 1, paddingHorizontal: 24, paddingBottom: 20, justifyContent: 'space-between' },
+  hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
+  logoWrap: { width: 240, height: 240, alignItems: 'center', justifyContent: 'center', marginBottom: -40 },
+  ring: { position: 'absolute', borderWidth: 1 },
+  ringOuter: { width: 240, height: 240, borderRadius: 120, borderColor: C.accentSoft },
+  ringInner: { width: 164, height: 164, borderRadius: 82, borderColor: C.accentBorder },
+  logo: {
+    width: 96,
+    height: 96,
+    borderRadius: 28,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: { color: C.text, fontSize: 38, fontFamily: F.displayBold, letterSpacing: -0.8 },
+  subtitle: {
+    color: '#A3ADBF',
+    fontSize: 16,
+    lineHeight: 23,
+    fontFamily: F.regular,
+    textAlign: 'center',
+    maxWidth: 280,
+  },
+  actions: { gap: 12 },
+  note: { color: C.textMuted, fontSize: 15, lineHeight: 21, fontFamily: F.regular, textAlign: 'center' },
+  error: { color: C.danger, fontSize: 14, textAlign: 'center', fontFamily: F.medium },
+  skip: { alignItems: 'center', justifyContent: 'center', minHeight: 48, borderRadius: R.md },
+  skipText: { color: C.accent, fontSize: 16, fontFamily: F.semibold },
+  hint: { color: C.textMuted, fontSize: 12, lineHeight: 17, textAlign: 'center', fontFamily: F.regular },
 });

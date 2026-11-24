@@ -2,18 +2,16 @@ import { memo } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { VoiceMessage } from '@/components/chat/voice-message';
+import { Icon } from '@/components/ui/icon';
+import { C, F, nameColor, R } from '@/constants/crew-theme';
 import type { ChatMessage, MessageImage, ReplyPreview } from '@/services/chat-types';
 import { imageSource } from '@/services/media';
 
-const NAME_COLORS = ['#4da6ff', '#f59e0b', '#22c55e', '#ec4899', '#a78bfa', '#14b8a6', '#f97316'];
 const IMAGE_MAX_WIDTH = 240;
 const IMAGE_MAX_HEIGHT = 320;
 
-export function colorForName(name: string) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
-  return NAME_COLORS[Math.abs(hash) % NAME_COLORS.length];
-}
+/** Namensfarbe (gut lesbar auf dunklen Bubbles) */
+export const colorForName = nameColor;
 
 function formatTime(iso: string) {
   const d = new Date(iso);
@@ -44,12 +42,12 @@ function fitImage(image: MessageImage) {
 function Quote({ reply, isOwn, onPress }: { reply: ReplyPreview; isOwn: boolean; onPress?: () => void }) {
   return (
     <Pressable onPress={onPress} style={[styles.quote, isOwn ? styles.quoteOwn : styles.quoteOther]}>
-      <View style={[styles.quoteBar, { backgroundColor: colorForName(reply.sender) }]} />
+      <View style={[styles.quoteBar, { backgroundColor: isOwn ? C.onAccent : colorForName(reply.sender) }]} />
       <View style={styles.quoteBody}>
-        <Text style={[styles.quoteSender, { color: isOwn ? '#fff' : colorForName(reply.sender) }]} numberOfLines={1}>
+        <Text style={[styles.quoteSender, { color: isOwn ? C.onAccent : colorForName(reply.sender) }]} numberOfLines={1}>
           {reply.sender}
         </Text>
-        <Text style={[styles.quoteText, reply.deleted && styles.italic]} numberOfLines={2}>
+        <Text style={[styles.quoteText, isOwn && styles.quoteTextOwn, reply.deleted && styles.italic]} numberOfLines={2}>
           {previewText(reply)}
         </Text>
       </View>
@@ -140,7 +138,10 @@ function MessageBubbleBase({
           )}
 
           {deleted ? (
-            <Text style={[styles.text, styles.deletedText]}>🚫 Nachricht gelöscht</Text>
+            <View style={styles.deletedRow}>
+              <Icon name="trash" size={14} color={C.textMuted} strokeWidth={2} />
+              <Text style={styles.deletedText}>Nachricht gelöscht</Text>
+            </View>
           ) : (
             <>
               {image && (
@@ -153,21 +154,23 @@ function MessageBubbleBase({
                   <Image source={imageSource(image, token)} style={[styles.image, fitImage(image)]} resizeMode="cover" />
                   {pending && (
                     <View style={styles.imageOverlay}>
-                      <ActivityIndicator color="#fff" />
+                      <ActivityIndicator color={C.accent} />
                     </View>
                   )}
                 </Pressable>
               )}
 
-              {audio && <VoiceMessage audio={audio} token={token} isOwn={isOwn} onLongPress={longPress} />}
+              {audio && <VoiceMessage audio={audio} token={token} isOwn={isOwn && !failed} onLongPress={longPress} />}
 
               {message.text ? (
-                <Text style={[styles.text, image && styles.padded, image && styles.afterImage]}>{message.text}</Text>
+                <Text style={[styles.text, isOwn && !failed && styles.textOwn, image && styles.padded, image && styles.afterImage]}>
+                  {message.text}
+                </Text>
               ) : null}
             </>
           )}
 
-          <Text style={[styles.meta, isOwn && styles.metaOwn, image && !deleted && styles.padded]}>{meta}</Text>
+          <Text style={[styles.meta, isOwn && !deleted && !failed && styles.metaOwn, image && !deleted && styles.padded]}>{meta}</Text>
         </Pressable>
 
         {reactions.length > 0 && !deleted && (
@@ -190,7 +193,12 @@ function MessageBubbleBase({
           </View>
         )}
 
-        {readLabel ? <Text style={styles.readLabel}>{readLabel}</Text> : null}
+        {readLabel ? (
+          <View style={styles.readRow}>
+            {readLabel !== 'Zugestellt' && <Icon name="checks" size={14} strokeWidth={2.2} />}
+            <Text style={styles.readLabel}>{readLabel}</Text>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -199,55 +207,65 @@ function MessageBubbleBase({
 export const MessageBubble = memo(MessageBubbleBase);
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', marginVertical: 2 },
+  row: { flexDirection: 'row', marginVertical: 3 },
   rowOwn: { justifyContent: 'flex-end' },
   rowOther: { justifyContent: 'flex-start' },
   column: { maxWidth: '80%' },
   columnOwn: { alignItems: 'flex-end' },
   columnOther: { alignItems: 'flex-start' },
-  bubble: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 },
+  bubble: { paddingHorizontal: 13, paddingVertical: 9, borderRadius: R.lg },
   bubbleWithImage: { paddingHorizontal: 0, paddingTop: 0, overflow: 'hidden' },
-  bubbleOwn: { backgroundColor: '#2563eb', borderBottomRightRadius: 4 },
-  bubbleOther: { backgroundColor: '#222', borderBottomLeftRadius: 4 },
-  bubbleDeleted: { backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#333', paddingHorizontal: 12, paddingTop: 8 },
+  bubbleOwn: { backgroundColor: C.accent, borderBottomRightRadius: 6 },
+  bubbleOther: { backgroundColor: C.bubbleOther, borderBottomLeftRadius: 6 },
+  bubbleDeleted: {
+    backgroundColor: C.bg,
+    borderWidth: 1,
+    borderColor: C.borderStrong,
+    paddingHorizontal: 13,
+    paddingTop: 9,
+  },
   bubblePending: { opacity: 0.7 },
-  bubbleFailed: { backgroundColor: '#7f1d1d' },
-  bubbleHighlighted: { borderWidth: 2, borderColor: '#fbbf24' },
-  padded: { paddingHorizontal: 12 },
-  afterImage: { marginTop: 6 },
-  sender: { fontSize: 12, fontWeight: '600', marginBottom: 2 },
-  senderOnImage: { paddingTop: 6, paddingBottom: 4 },
-  quote: { flexDirection: 'row', borderRadius: 8, overflow: 'hidden', marginBottom: 6 },
-  quoteOwn: { backgroundColor: 'rgba(255,255,255,0.15)' },
-  quoteOther: { backgroundColor: 'rgba(255,255,255,0.07)' },
+  bubbleFailed: { backgroundColor: '#5B1A22' },
+  bubbleHighlighted: { borderWidth: 2, borderColor: C.warning },
+  padded: { paddingHorizontal: 13 },
+  afterImage: { marginTop: 7 },
+  sender: { fontSize: 12, fontFamily: F.semibold, marginBottom: 2 },
+  senderOnImage: { paddingTop: 8, paddingBottom: 6 },
+  quote: { flexDirection: 'row', borderRadius: R.sm, overflow: 'hidden', marginBottom: 6 },
+  quoteOwn: { backgroundColor: 'rgba(10,13,20,0.12)' },
+  quoteOther: { backgroundColor: 'rgba(255,255,255,0.06)' },
   quoteOnImage: { paddingHorizontal: 8, paddingTop: 8 },
   quoteBar: { width: 3 },
-  quoteBody: { paddingHorizontal: 8, paddingVertical: 5, flexShrink: 1 },
-  quoteSender: { fontSize: 12, fontWeight: '700' },
-  quoteText: { color: '#ddd', fontSize: 13 },
+  quoteBody: { paddingHorizontal: 9, paddingVertical: 5, flexShrink: 1 },
+  quoteSender: { fontSize: 12, fontFamily: F.bold },
+  quoteText: { color: C.textSoft, fontSize: 13, fontFamily: F.regular },
+  quoteTextOwn: { color: '#1D3A52' },
   italic: { fontStyle: 'italic' },
-  image: { backgroundColor: '#333' },
+  image: { backgroundColor: C.raised },
   imageOverlay: {
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(10,13,20,0.4)',
   },
-  text: { color: '#fff', fontSize: 15, lineHeight: 20 },
-  deletedText: { color: '#888', fontStyle: 'italic', fontSize: 14 },
-  meta: { color: '#999', fontSize: 10, marginTop: 4, alignSelf: 'flex-end' },
-  metaOwn: { color: '#dbeafe' },
-  reactions: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: -4, paddingHorizontal: 6 },
+  text: { color: C.text, fontSize: 15, lineHeight: 20, fontFamily: F.regular },
+  textOwn: { color: C.onAccent },
+  deletedRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  deletedText: { color: C.textMuted, fontStyle: 'italic', fontSize: 14, fontFamily: F.regular },
+  meta: { color: C.textMuted, fontSize: 10, marginTop: 3, alignSelf: 'flex-end', fontFamily: F.medium },
+  metaOwn: { color: C.onAccentMuted },
+  reactions: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: -5, paddingHorizontal: 8 },
   reactionsOwn: { justifyContent: 'flex-end' },
   chip: {
-    backgroundColor: '#2a2a2a',
-    borderRadius: 12,
-    paddingHorizontal: 7,
+    backgroundColor: C.raised,
+    borderRadius: R.pill,
+    paddingHorizontal: 8,
     paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: '#111',
+    borderWidth: 1.5,
+    borderColor: C.bg,
   },
-  chipMine: { backgroundColor: '#1e3a8a', borderColor: '#3b82f6' },
-  chipText: { color: '#fff', fontSize: 13 },
-  readLabel: { color: '#777', fontSize: 11, marginTop: 3, marginHorizontal: 4 },
+  chipMine: { backgroundColor: C.accentSoft, borderColor: C.accentBorder },
+  chipText: { color: C.text, fontSize: 13, fontFamily: F.medium },
+  readRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, marginHorizontal: 4 },
+  readLabel: { color: C.textMuted, fontSize: 11, fontFamily: F.medium },
 });

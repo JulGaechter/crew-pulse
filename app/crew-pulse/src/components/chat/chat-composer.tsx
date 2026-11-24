@@ -1,6 +1,8 @@
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { previewText } from '@/components/chat/message-bubble';
+import { Icon } from '@/components/ui/icon';
+import { C, F, R } from '@/constants/crew-theme';
 import { formatDuration } from '@/hooks/use-voice-recorder';
 import type { ChatMessage } from '@/services/chat-types';
 
@@ -50,8 +52,13 @@ export function ChatComposer({
     return (
       <View style={[styles.wrapper, { paddingBottom: bottomPadding }]}>
         <View style={styles.row}>
-          <Pressable onPress={onCancelRecording} hitSlop={8} style={styles.cancelRecording}>
-            <Text style={styles.cancelRecordingText}>Abbrechen</Text>
+          <Pressable
+            onPress={onCancelRecording}
+            hitSlop={8}
+            style={styles.cancelRecording}
+            accessibilityRole="button"
+            accessibilityLabel="Aufnahme verwerfen">
+            <Icon name="trash" size={20} color={C.danger} />
           </Pressable>
           <View style={styles.recordingInfo}>
             <View style={styles.recDot} />
@@ -60,9 +67,10 @@ export function ChatComposer({
           </View>
           <Pressable
             onPress={onSendRecording}
-            style={({ pressed }) => [styles.sendButton, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.iconButton, styles.accentButton, pressed && styles.pressed]}
+            accessibilityRole="button"
             accessibilityLabel="Sprachnachricht senden">
-            <Text style={styles.sendText}>Senden</Text>
+            <Icon name="send" size={20} color={C.onAccent} strokeWidth={2} />
           </Pressable>
         </View>
       </View>
@@ -87,7 +95,7 @@ export function ChatComposer({
             </Text>
           </View>
           <Pressable onPress={onCancelMode} hitSlop={10} style={styles.modeClose} accessibilityLabel="Abbrechen">
-            <Text style={styles.modeCloseText}>✕</Text>
+            <Icon name="close" size={18} color={C.textMuted} strokeWidth={2} />
           </Pressable>
         </View>
       )}
@@ -97,15 +105,16 @@ export function ChatComposer({
           <Pressable
             onPress={onAttach}
             hitSlop={8}
-            style={({ pressed }) => [styles.round, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+            accessibilityRole="button"
             accessibilityLabel="Foto senden">
-            <Text style={styles.roundText}>＋</Text>
+            <Icon name="plus" size={22} strokeWidth={2} />
           </Pressable>
         )}
         <TextInput
           style={styles.input}
           placeholder={editing ? 'Neuer Text…' : placeholder}
-          placeholderTextColor="#888"
+          placeholderTextColor={C.textMuted}
           value={value}
           onChangeText={onChangeText}
           multiline
@@ -114,18 +123,26 @@ export function ChatComposer({
         />
         {hasText || editing ? (
           <Pressable
-            style={({ pressed }) => [styles.sendButton, !canSave && styles.disabled, pressed && styles.pressed]}
+            style={({ pressed }) => [
+              styles.iconButton,
+              styles.accentButton,
+              !canSave && styles.disabled,
+              pressed && styles.pressed,
+            ]}
             onPress={onSend}
-            disabled={!canSave}>
-            <Text style={styles.sendText}>{editing ? 'Speichern' : 'Senden'}</Text>
+            disabled={!canSave}
+            accessibilityRole="button"
+            accessibilityLabel={editing ? 'Speichern' : 'Senden'}>
+            <Icon name={editing ? 'check' : 'send'} size={20} color={C.onAccent} strokeWidth={2.2} />
           </Pressable>
         ) : (
           <Pressable
             onPress={onStartRecording}
             hitSlop={8}
-            style={({ pressed }) => [styles.round, styles.mic, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.iconButton, styles.accentButton, pressed && styles.pressed]}
+            accessibilityRole="button"
             accessibilityLabel="Sprachnachricht aufnehmen">
-            <Text style={styles.micText}>🎤</Text>
+            <Icon name="mic" size={20} color={C.onAccent} strokeWidth={2} />
           </Pressable>
         )}
       </View>
@@ -134,61 +151,64 @@ export function ChatComposer({
 }
 
 const styles = StyleSheet.create({
-  wrapper: { borderTopWidth: 1, borderTopColor: '#262626', backgroundColor: '#111', paddingTop: 8 },
+  wrapper: { backgroundColor: C.bg, paddingTop: 8 },
   row: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, gap: 8 },
   modeBar: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 12,
     marginBottom: 8,
-    backgroundColor: '#1c1c1c',
-    borderRadius: 10,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: R.md,
     overflow: 'hidden',
   },
-  modeAccent: { width: 3, alignSelf: 'stretch', backgroundColor: '#3b82f6' },
-  modeAccentEdit: { backgroundColor: '#f59e0b' },
-  modeBody: { flex: 1, paddingHorizontal: 10, paddingVertical: 6 },
-  modeTitle: { color: '#60a5fa', fontSize: 12, fontWeight: '700' },
-  modeTitleEdit: { color: '#fbbf24' },
-  modeText: { color: '#bbb', fontSize: 13 },
-  modeClose: { paddingHorizontal: 12, paddingVertical: 8 },
-  modeCloseText: { color: '#888', fontSize: 16 },
-  round: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#242424',
+  modeAccent: { width: 3, alignSelf: 'stretch', backgroundColor: C.accent },
+  modeAccentEdit: { backgroundColor: C.warning },
+  modeBody: { flex: 1, paddingHorizontal: 10, paddingVertical: 7 },
+  modeTitle: { color: C.accent, fontSize: 12, fontFamily: F.bold },
+  modeTitleEdit: { color: C.warning },
+  modeText: { color: C.textSoft, fontSize: 13, fontFamily: F.regular },
+  modeClose: { paddingHorizontal: 12, paddingVertical: 10 },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    backgroundColor: C.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  roundText: { color: '#4da6ff', fontSize: 22, lineHeight: 24 },
-  mic: { backgroundColor: '#1e3a8a' },
-  micText: { fontSize: 18 },
+  accentButton: { backgroundColor: C.accent },
   input: {
     flex: 1,
-    backgroundColor: '#242424',
-    color: '#fff',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 10,
+    minHeight: 44,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    color: C.text,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingTop: 11,
+    paddingBottom: 11,
     maxHeight: 120,
     fontSize: 15,
+    fontFamily: F.regular,
   },
-  sendButton: {
-    backgroundColor: '#2563eb',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    height: 40,
-    justifyContent: 'center',
-  },
-  sendText: { color: '#fff', fontWeight: '600' },
   disabled: { opacity: 0.4 },
-  pressed: { opacity: 0.7 },
-  cancelRecording: { height: 40, justifyContent: 'center', paddingHorizontal: 4 },
-  cancelRecordingText: { color: '#ef4444', fontWeight: '600' },
-  recordingInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 40, justifyContent: 'center' },
-  recDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#ef4444' },
-  recTime: { color: '#fff', fontSize: 16, fontVariant: ['tabular-nums'], fontWeight: '600' },
-  recHint: { color: '#888', fontSize: 13 },
+  pressed: { opacity: 0.75 },
+  cancelRecording: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  recordingInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    height: 44,
+    paddingHorizontal: 16,
+    backgroundColor: C.surface,
+    borderRadius: 22,
+  },
+  recDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.danger },
+  recTime: { color: C.text, fontSize: 16, fontVariant: ['tabular-nums'], fontFamily: F.semibold },
+  recHint: { color: C.textMuted, fontSize: 13, fontFamily: F.regular },
 });

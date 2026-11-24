@@ -18,7 +18,10 @@ import { ChatComposer, type ComposerMode } from '@/components/chat/chat-composer
 import { ImageViewer } from '@/components/chat/image-viewer';
 import { MessageActions } from '@/components/chat/message-actions';
 import { MessageBubble } from '@/components/chat/message-bubble';
+import { CrewAvatar } from '@/components/crews/crew-avatar';
 import { ConnectionStatus } from '@/components/ui/connection-status';
+import { Icon } from '@/components/ui/icon';
+import { C, F, R } from '@/constants/crew-theme';
 import { BottomTabInset } from '@/constants/theme';
 import { useChat } from '@/hooks/use-chat';
 import type { ConnectionState } from '@/hooks/use-socket-connection';
@@ -91,7 +94,11 @@ export function ChatRoom({ crew, session, connection, onBack, onOpenInfo }: Prop
   const insets = useSafeAreaInsets();
   // Die native Tab-Leiste schwebt über dem Inhalt – Eingabe darüber platzieren.
   // Bei offener Tastatur ist die Tab-Leiste verdeckt, dann reicht wenig Abstand.
-  const inputBottomPadding = keyboardVisible ? 8 : insets.bottom + BottomTabInset + 12;
+  const inputBottomPadding = keyboardVisible
+    ? 8
+    : Platform.OS === 'ios'
+      ? insets.bottom + 14 // iOS: Inhalt endet schon über dem Home-Indikator
+      : insets.bottom + BottomTabInset + 12;
 
   useEffect(() => {
     // Sprachnachrichten auch im Lautlos-Modus hörbar abspielen
@@ -251,22 +258,30 @@ export function ChatRoom({ crew, session, connection, onBack, onOpenInfo }: Prop
     [data, myId, token, lastOwnSent?.id, readLabel, highlightedId, retryMessage, jumpTo, toggleReaction],
   );
 
-  const onlineText = `${crew.memberCount} Mitglieder · ${online.length} online`;
+  const onlineText = `${crew.memberCount} ${crew.memberCount === 1 ? 'Mitglied' : 'Mitglieder'} · ${online.length} online`;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        <Pressable onPress={onBack} hitSlop={12} style={styles.back}>
-          <Text style={styles.backText}>‹</Text>
+        <Pressable onPress={onBack} hitSlop={8} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Zurück">
+          <Icon name="back" size={24} strokeWidth={2} />
         </Pressable>
-        <Pressable onPress={onOpenInfo} style={styles.titleWrap}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {crew.name}
-          </Text>
-          <ConnectionStatus connection={connection} connectedText={onlineText} />
+        <Pressable onPress={onOpenInfo} style={styles.titleWrap} accessibilityRole="button" accessibilityLabel="Crew-Info">
+          <CrewAvatar name={crew.name} size={40} />
+          <View style={styles.titleText}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {crew.name}
+            </Text>
+            <ConnectionStatus connection={connection} connectedText={onlineText} />
+          </View>
         </Pressable>
-        <Pressable onPress={onOpenInfo} hitSlop={12} style={styles.infoButton}>
-          <Text style={styles.infoText}>ⓘ</Text>
+        <Pressable
+          onPress={onOpenInfo}
+          hitSlop={8}
+          style={[styles.headerButton, styles.headerButtonFilled]}
+          accessibilityRole="button"
+          accessibilityLabel="Crew-Info">
+          <Icon name="info" size={20} />
         </Pressable>
       </View>
 
@@ -294,13 +309,13 @@ export function ChatRoom({ crew, session, connection, onBack, onOpenInfo }: Prop
             }, 250);
           }}
           ListFooterComponent={
-            loadingOlder ? <ActivityIndicator color="#666" style={styles.olderSpinner} /> : undefined
+            loadingOlder ? <ActivityIndicator color={C.accent} style={styles.olderSpinner} /> : undefined
           }
           ListEmptyComponent={
             loaded ? (
               <Text style={styles.empty}>Noch keine Nachrichten. Schreib als Erste:r etwas!</Text>
             ) : (
-              <ActivityIndicator color="#666" style={styles.emptySpinner} />
+              <ActivityIndicator color={C.accent} style={styles.emptySpinner} />
             )
           }
         />
@@ -341,32 +356,39 @@ export function ChatRoom({ crew, session, connection, onBack, onOpenInfo }: Prop
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#111' },
-  container: { flex: 1, backgroundColor: '#111' },
+  safeArea: { flex: 1, backgroundColor: C.bg },
+  container: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     paddingHorizontal: 8,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#262626',
+    borderBottomColor: C.raised,
   },
-  back: { paddingHorizontal: 8 },
-  backText: { color: '#4da6ff', fontSize: 34, lineHeight: 36, fontWeight: '300' },
-  titleWrap: { flex: 1 },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  infoButton: { paddingHorizontal: 10 },
-  infoText: { color: '#4da6ff', fontSize: 22 },
+  headerButton: { width: 44, height: 44, borderRadius: R.md, alignItems: 'center', justifyContent: 'center' },
+  headerButtonFilled: { backgroundColor: C.surface },
+  titleWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  titleText: { flex: 1, minWidth: 0 },
+  headerTitle: { color: C.text, fontSize: 17, fontFamily: F.display },
   list: { paddingHorizontal: 12, paddingVertical: 12 },
   empty: {
-    color: '#666',
+    color: C.textMuted,
     textAlign: 'center',
     marginTop: 40,
+    fontFamily: F.regular,
     // In invertierter Liste wird der Empty-State gespiegelt – zurückdrehen.
     transform: [{ scaleY: -1 }],
   },
   emptySpinner: { marginTop: 40 },
   olderSpinner: { marginVertical: 16 },
-  typing: { color: '#888', fontSize: 12, fontStyle: 'italic', paddingHorizontal: 16, minHeight: 16 },
+  typing: {
+    color: C.textMuted,
+    fontSize: 12,
+    fontStyle: 'italic',
+    paddingHorizontal: 18,
+    minHeight: 16,
+    fontFamily: F.regular,
+  },
 });

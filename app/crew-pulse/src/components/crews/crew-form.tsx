@@ -4,11 +4,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  StyleSheet,
   Text,
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { formStyles, placeholderColor, spinnerOnAccent } from '@/components/ui/form-styles';
 
 type Mode = 'create' | 'join' | 'rename';
 
@@ -68,7 +69,7 @@ export function CrewForm({ mode, initialValue = '', busy, error, onSubmit, onCan
         <TextInput
           style={[styles.input, isCode && styles.codeInput]}
           placeholder={copy.placeholder}
-          placeholderTextColor="#555"
+          placeholderTextColor={placeholderColor}
           value={value}
           onChangeText={handleChange}
           onSubmitEditing={submit}
@@ -83,7 +84,7 @@ export function CrewForm({ mode, initialValue = '', busy, error, onSubmit, onCan
           style={({ pressed }) => [styles.button, !canSubmit && styles.buttonDisabled, pressed && styles.pressed]}
           onPress={submit}
           disabled={!canSubmit}>
-          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{copy.button}</Text>}
+          {busy ? <ActivityIndicator color={spinnerOnAccent} /> : <Text style={styles.buttonText}>{copy.button}</Text>}
         </Pressable>
         <Pressable onPress={onCancel} style={styles.cancel} disabled={busy}>
           <Text style={styles.cancelText}>Abbrechen</Text>
@@ -93,25 +94,4 @@ export function CrewForm({ mode, initialValue = '', busy, error, onSubmit, onCan
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#111' },
-  container: { flex: 1, justifyContent: 'center', padding: 24, gap: 12 },
-  title: { color: '#fff', fontSize: 26, fontWeight: '700' },
-  subtitle: { color: '#999', fontSize: 15, lineHeight: 21, marginBottom: 12 },
-  input: {
-    backgroundColor: '#242424',
-    color: '#fff',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 17,
-  },
-  codeInput: { fontSize: 28, letterSpacing: 6, textAlign: 'center', fontWeight: '700' },
-  error: { color: '#f87171', fontSize: 14 },
-  button: { backgroundColor: '#2563eb', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
-  buttonDisabled: { opacity: 0.4 },
-  pressed: { opacity: 0.7 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  cancel: { alignItems: 'center', paddingVertical: 8 },
-  cancelText: { color: '#999' },
-});
+const styles = formStyles;

@@ -1,39 +1,32 @@
 import { NativeTabs } from 'expo-router/native-tabs';
-import { useColorScheme } from 'react-native';
 
-import { Colors } from '@/constants/theme';
+import { C, F } from '@/constants/crew-theme';
 
+/** Native Tab-Leiste (auf iOS 26 "Liquid Glass") in den CrewPulse-Farben */
 export default function AppTabs() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
-
   return (
     <NativeTabs
-      backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}>
+      backgroundColor={C.surface}
+      tintColor={C.accent}
+      indicatorColor={C.accentSoft}
+      iconColor={{ default: C.textMuted, selected: C.accent }}
+      labelStyle={{
+        default: { color: C.textMuted, fontFamily: F.medium },
+        selected: { color: C.accent, fontFamily: F.semibold },
+      }}>
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Label>Chat</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/home.png')}
-          renderingMode="template"
-        />
+        <NativeTabs.Trigger.Icon src={require('@/assets/images/tabIcons/chat.png')} renderingMode="template" />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="map">
         <NativeTabs.Trigger.Label>Map</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/explore.png')}
-          renderingMode="template"
-        />
+        <NativeTabs.Trigger.Icon src={require('@/assets/images/tabIcons/map.png')} renderingMode="template" />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="snaps">
         <NativeTabs.Trigger.Label>Snap</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/explore.png')}
-          renderingMode="template"
-        />
+        <NativeTabs.Trigger.Icon src={require('@/assets/images/tabIcons/snap.png')} renderingMode="template" />
       </NativeTabs.Trigger>
     </NativeTabs>
   );

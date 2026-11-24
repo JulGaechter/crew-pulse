@@ -3,6 +3,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { ChatMessage } from '@/services/chat-types';
 import { imageSource } from '@/services/media';
+import { Icon } from '@/components/ui/icon';
+import { C, F } from '@/constants/crew-theme';
 
 type Props = {
   message: ChatMessage | null;
@@ -23,7 +25,9 @@ export function ImageViewer({ message, token, onClose }: Props) {
           <Text style={styles.sender} numberOfLines={1}>
             {message?.sender}
           </Text>
-          <Text style={styles.close}>Schliessen</Text>
+          <View style={styles.closeButton} accessibilityLabel="Schliessen">
+            <Icon name="close" size={20} color={C.text} strokeWidth={2} />
+          </View>
         </View>
         {message?.text ? (
           <View style={[styles.caption, { paddingBottom: insets.bottom + 16 }]}>
@@ -45,12 +49,13 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingBottom: 12,
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
-  sender: { color: '#fff', fontSize: 16, fontWeight: '600', flex: 1 },
-  close: { color: '#4da6ff', fontSize: 16, fontWeight: '600' },
+  sender: { color: C.text, fontSize: 16, fontFamily: F.semibold, flex: 1 },
+  closeButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
   caption: {
     position: 'absolute',
     left: 0,
@@ -60,5 +65,5 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  captionText: { color: '#fff', fontSize: 15, lineHeight: 21 },
+  captionText: { color: C.text, fontSize: 15, lineHeight: 21, fontFamily: F.regular },
 });

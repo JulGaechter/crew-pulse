@@ -31,17 +31,34 @@ module.exports = ({ config }) => {
     });
   }
 
+  // Design "Midnight Ice": immer dunkel, Splash auf dunklem Grund
+  const BG = '#0A0D14';
+  const ICON_BG = '#14324A';
+  const themedPlugins = plugins.map((p) =>
+    (Array.isArray(p) ? p[0] : p) === 'expo-splash-screen'
+      ? ['expo-splash-screen', { backgroundColor: BG, image: './assets/images/splash-icon.png', imageWidth: 120 }]
+      : p,
+  );
+
   return {
     ...config,
+    userInterfaceStyle: 'dark',
+    backgroundColor: BG,
+    icon: './assets/images/icon.png',
     ios: {
       ...config.ios,
+      icon: './assets/images/icon.png',
       bundleIdentifier: config.ios?.bundleIdentifier ?? BUNDLE_ID,
       usesAppleSignIn: true,
     },
     android: {
       ...config.android,
+      adaptiveIcon: {
+        ...config.android?.adaptiveIcon,
+        backgroundColor: ICON_BG,
+      },
       package: config.android?.package ?? BUNDLE_ID,
     },
-    plugins,
+    plugins: themedPlugins,
   };
 };
