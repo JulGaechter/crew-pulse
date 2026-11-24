@@ -81,7 +81,7 @@ export async function loadLegacyName(): Promise<string | null> {
 
 // --- Server ------------------------------------------------------------------
 
-async function request<T>(path: string, init: RequestInit & { token?: string } = {}): Promise<T> {
+export async function request<T>(path: string, init: RequestInit & { token?: string } = {}): Promise<T> {
   const { token, headers, ...rest } = init;
   const res = await fetch(`${API_URL}${path}`, {
     ...rest,

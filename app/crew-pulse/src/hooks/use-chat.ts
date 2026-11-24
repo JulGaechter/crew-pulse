@@ -1,115 +1,214 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { ConnectionState } from '@/hooks/use-socket-connection';
 import { socket } from '@/services/api';
 import type {
   ChatMessage,
   ChatUser,
   JoinAck,
   PresenceEvent,
+  Reaction,
+  ReactionEvent,
+  ReadEvent,
+  ReadState,
+  ReplyPreview,
   SendAck,
   TypingEvent,
 } from '@/services/chat-types';
+import {
+  loadOlderMessages,
+  prepareImage,
+  uploadAudio,
+  uploadImage,
+  type PickedImage,
+} from '@/services/media';
 import type { Session } from '@/services/session';
-
-export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 
 const ACK_TIMEOUT_MS = 5000;
 const TYPING_IDLE_MS = 2500;
 const REMOTE_TYPING_EXPIRE_MS = 4000;
 const MAX_LENGTH = 1000;
 
+type PendingMedia =
+  | { kind: 'image'; picked: PickedImage; uploadedId?: string }
+  | { kind: 'audio'; uri: string; durationMs: number; uploadedId?: string };
+
+/** Was für einen erneuten Sendeversuch gebraucht wird */
+type PendingSend = { text: string; replyToId?: string; media?: PendingMedia };
+
 function makeClientId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Fügt eine Nachricht ein oder ersetzt die passende optimistische Version. */
-function upsertMessage(list: ChatMessage[], msg: ChatMessage): ChatMessage[] {
-  const byClientId = msg.clientId
-    ? list.findIndex(
-        (m) => m.clientId === msg.clientId && (!msg.senderId || m.senderId === msg.senderId),
-      )
-    : -1;
-  if (byClientId !== -1) {
-    const next = [...list];
-    next[byClientId] = { ...msg, status: 'sent' };
-    return next;
-  }
-  if (list.some((m) => m.id === msg.id)) return list;
-  return [...list, { ...msg, status: 'sent' }];
+function byTime(a: ChatMessage, b: ChatMessage) {
+  return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
 }
 
-/** Server-Verlauf übernehmen, aber noch offene/fehlgeschlagene lokale Nachrichten behalten. */
-function mergeHistory(prev: ChatMessage[], history: ChatMessage[], myId: string): ChatMessage[] {
-  const fromServer = history.map((m) => ({ ...m, status: 'sent' as const }));
-  const known = new Set(
-    history.filter((h) => h.senderId === myId && h.clientId).map((h) => h.clientId),
+/** Server-Version übernehmen, aber lokale Dateien (eigenes Bild/eigene Aufnahme) behalten – kein Flackern */
+function mergeServerVersion(prev: ChatMessage | undefined, msg: ChatMessage): ChatMessage {
+  return {
+    ...msg,
+    status: 'sent',
+    image: msg.image && prev?.image?.localUri ? { ...msg.image, localUri: prev.image.localUri } : msg.image,
+    audio: msg.audio && prev?.audio?.localUri ? { ...msg.audio, localUri: prev.audio.localUri } : msg.audio,
+  };
+}
+
+/** Fügt eine Nachricht ein oder ersetzt die passende (optimistische) Version. */
+function upsertMessage(list: ChatMessage[], msg: ChatMessage): ChatMessage[] {
+  const idx = list.findIndex(
+    (m) =>
+      m.id === msg.id ||
+      (msg.clientId && m.clientId === msg.clientId && (!msg.senderId || m.senderId === msg.senderId)),
   );
+  if (idx === -1) return [...list, mergeServerVersion(undefined, msg)];
+  const next = [...list];
+  next[idx] = mergeServerVersion(list[idx], msg);
+  return next;
+}
+
+/** Bearbeitet/gelöscht: Nachricht ersetzen und Zitate in Antworten nachziehen */
+function applyUpdate(list: ChatMessage[], updated: ChatMessage): ChatMessage[] {
+  return list.map((m) => {
+    if (m.id === updated.id) return mergeServerVersion(m, updated);
+    if (m.replyTo?.id === updated.id) {
+      return {
+        ...m,
+        replyTo: {
+          ...m.replyTo,
+          text: updated.deleted ? '' : updated.text,
+          hasImage: Boolean(updated.image),
+          hasAudio: Boolean(updated.audio),
+          deleted: Boolean(updated.deleted),
+        },
+      };
+    }
+    return m;
+  });
+}
+
+/** Neuer Verlauf vom Server + bereits geladene ältere + noch offene lokale Nachrichten */
+function mergeHistory(prev: ChatMessage[], history: ChatMessage[], myId: string): ChatMessage[] {
+  let merged = prev.filter((m) => m.status === 'sent' || !m.status);
+  for (const msg of history) merged = upsertMessage(merged, msg);
+  const known = new Set(merged.filter((m) => m.senderId === myId && m.clientId).map((m) => m.clientId));
   const stillOpen = prev.filter(
     (m) => (m.status === 'pending' || m.status === 'failed') && !known.has(m.clientId),
   );
-  return [...fromServer, ...stillOpen];
+  return [...merged.sort(byTime), ...stillOpen];
 }
 
-type Options = {
-  /** Wird aufgerufen, wenn der Server den Token ablehnt. */
-  onUnauthorized?: () => void;
-};
+/** Eigene Reaktion lokal umschalten (bevor der Server antwortet) */
+function toggleLocal(reactions: Reaction[] = [], emoji: string, myId: string): Reaction[] {
+  const existing = reactions.find((r) => r.emoji === emoji);
+  if (!existing) return [...reactions, { emoji, userIds: [myId] }];
+  const userIds = existing.userIds.includes(myId)
+    ? existing.userIds.filter((id) => id !== myId)
+    : [...existing.userIds, myId];
+  return userIds.length
+    ? reactions.map((r) => (r.emoji === emoji ? { ...r, userIds } : r))
+    : reactions.filter((r) => r.emoji !== emoji);
+}
 
-export function useChat(session: Session | null, { onUnauthorized }: Options = {}) {
+function toReplyPreview(m: ChatMessage): ReplyPreview {
+  return {
+    id: m.id,
+    senderId: m.senderId,
+    sender: m.sender,
+    text: m.text,
+    hasImage: Boolean(m.image),
+    hasAudio: Boolean(m.audio),
+    deleted: Boolean(m.deleted),
+  };
+}
+
+/** Chat einer Crew. Die Socket-Verbindung selbst kommt von useSocketConnection. */
+export function useChat(crewId: string, session: Session, connection: ConnectionState) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [connection, setConnection] = useState<ConnectionState>('disconnected');
+  const [loaded, setLoaded] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [online, setOnline] = useState<ChatUser[]>([]);
+  const [readStates, setReadStates] = useState<ReadState[]>([]);
   // userId -> Name derjenigen, die gerade tippen
   const [typing, setTyping] = useState<Record<string, string>>({});
 
   const remoteTypingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const ownTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ownIsTyping = useRef(false);
+  const loadedRef = useRef(false);
+  // Noch nicht bestätigte Nachrichten: clientId -> alles für einen neuen Versuch
+  const pendingSends = useRef<Record<string, PendingSend>>({});
 
-  // Aktuelle Werte für Callbacks, ohne bei Namensänderung neu zu verbinden.
-  const userRef = useRef<ChatUser | null>(session?.user ?? null);
-  userRef.current = session?.user ?? null;
-  const onUnauthorizedRef = useRef(onUnauthorized);
-  onUnauthorizedRef.current = onUnauthorized;
+  const myId = session.user.id;
+  const myName = session.user.name;
 
-  const token = session?.token ?? null;
-  const myId = session?.user.id ?? null;
-
-  // --- Verbindung & Events ---------------------------------------------------
+  // --- Beitreten (bei jeder (Wieder-)Verbindung) -----------------------------
   useEffect(() => {
-    if (!token || !myId) return;
+    if (connection !== 'connected') return;
+    socket.timeout(ACK_TIMEOUT_MS).emit('join', { crewId }, (err: Error | null, res?: JoinAck) => {
+      if (err || !res?.ok) return;
+      if (res.history) setMessages((prev) => mergeHistory(prev, res.history!, myId));
+      if (res.online) setOnline(res.online);
+      if (res.readStates) setReadStates(res.readStates);
+      // Beim ersten Laden entscheidet der Server, ob es ältere gibt; danach bleibt der Stand
+      if (!loadedRef.current) setHasMore(Boolean(res.hasMore));
+      loadedRef.current = true;
+      setLoaded(true);
+    });
+  }, [connection, crewId, myId]);
 
-    const join = () => {
-      setConnection('connected');
-      socket.timeout(ACK_TIMEOUT_MS).emit('join', {}, (err: Error | null, res?: JoinAck) => {
-        if (err || !res?.ok) return;
-        if (res.history) setMessages((prev) => mergeHistory(prev, res.history!, myId));
-        if (res.online) setOnline(res.online);
-      });
+  // --- Events dieser Crew ----------------------------------------------------
+  useEffect(() => {
+    const onMessage = (msg: ChatMessage) => {
+      if (msg.crewId !== crewId) return;
+      setMessages((prev) => upsertMessage(prev, msg));
+      // Chat ist offen -> gleich als gelesen markieren
+      if (msg.senderId !== myId) socket.emit('crew:read', { crewId });
     };
 
-    const onDisconnect = () => setConnection('disconnected');
-    const onConnectError = (err: Error) => {
-      setConnection('disconnected');
-      if (err.message === 'unauthorized') onUnauthorizedRef.current?.();
+    const onUpdated = (msg: ChatMessage) => {
+      if (msg.crewId === crewId) setMessages((prev) => applyUpdate(prev, msg));
     };
-    const onReconnectAttempt = () => setConnection('connecting');
 
-    const onMessage = (msg: ChatMessage) => setMessages((prev) => upsertMessage(prev, msg));
+    const onRead = (ev: ReadEvent) => {
+      if (ev.crewId !== crewId) return;
+      setReadStates((prev) =>
+        prev.some((r) => r.userId === ev.userId)
+          ? prev.map((r) => (r.userId === ev.userId ? { ...r, lastReadAt: ev.lastReadAt } : r))
+          : [...prev, { userId: ev.userId, name: '', lastReadAt: ev.lastReadAt }],
+      );
+    };
 
-    const onPresence = ({ online }: PresenceEvent) => setOnline(online);
+    const onReaction = (ev: ReactionEvent) => {
+      if (ev.crewId !== crewId) return;
+      setMessages((prev) => prev.map((m) => (m.id === ev.messageId ? { ...m, reactions: ev.reactions } : m)));
+    };
+
+    const onPresence = (ev: PresenceEvent) => {
+      if (ev.crewId === crewId) setOnline(ev.online);
+    };
 
     const onUserUpdated = (user: ChatUser) => {
       setMessages((prev) =>
-        prev.some((m) => m.senderId === user.id && m.sender !== user.name)
-          ? prev.map((m) => (m.senderId === user.id ? { ...m, sender: user.name } : m))
-          : prev,
+        prev.map((m) => {
+          const senderChanged = m.senderId === user.id && m.sender !== user.name;
+          const quoteChanged = m.replyTo?.senderId === user.id && m.replyTo.sender !== user.name;
+          if (!senderChanged && !quoteChanged) return m;
+          return {
+            ...m,
+            sender: senderChanged ? user.name : m.sender,
+            replyTo: quoteChanged && m.replyTo ? { ...m.replyTo, sender: user.name } : m.replyTo,
+          };
+        }),
       );
+      setOnline((prev) => prev.map((u) => (u.id === user.id ? { ...u, name: user.name } : u)));
+      setReadStates((prev) => prev.map((r) => (r.userId === user.id ? { ...r, name: user.name } : r)));
       setTyping((prev) => (prev[user.id] ? { ...prev, [user.id]: user.name } : prev));
     };
 
-    const onTyping = ({ userId, name, isTyping }: TypingEvent) => {
-      if (userId === myId) return;
+    const onTyping = ({ crewId: ev, userId, name, isTyping }: TypingEvent) => {
+      if (ev !== crewId || userId === myId) return;
       clearTimeout(remoteTypingTimers.current[userId]);
       if (isTyping) {
         setTyping((prev) => ({ ...prev, [userId]: name }));
@@ -121,95 +220,230 @@ export function useChat(session: Session | null, { onUnauthorized }: Options = {
       }
     };
 
-    socket.on('connect', join);
-    socket.on('disconnect', onDisconnect);
-    socket.on('connect_error', onConnectError);
-    socket.io.on('reconnect_attempt', onReconnectAttempt);
     socket.on('message:new', onMessage);
+    socket.on('message:updated', onUpdated);
+    socket.on('read:updated', onRead);
+    socket.on('reaction:updated', onReaction);
     socket.on('presence', onPresence);
     socket.on('typing', onTyping);
     socket.on('user:updated', onUserUpdated);
 
-    socket.auth = { token };
-    setConnection('connecting');
-    socket.connect();
-
     const timers = remoteTypingTimers.current;
     return () => {
-      socket.off('connect', join);
-      socket.off('disconnect', onDisconnect);
-      socket.off('connect_error', onConnectError);
-      socket.io.off('reconnect_attempt', onReconnectAttempt);
       socket.off('message:new', onMessage);
+      socket.off('message:updated', onUpdated);
+      socket.off('read:updated', onRead);
+      socket.off('reaction:updated', onReaction);
       socket.off('presence', onPresence);
       socket.off('typing', onTyping);
       socket.off('user:updated', onUserUpdated);
       Object.values(timers).forEach(clearTimeout);
       if (ownTypingTimer.current) clearTimeout(ownTypingTimer.current);
-      socket.disconnect();
-      setConnection('disconnected');
-      setTyping({});
-      setOnline([]);
+      if (ownIsTyping.current) {
+        ownIsTyping.current = false;
+        socket.emit('typing', { crewId, isTyping: false });
+      }
     };
-  }, [token, myId]);
+  }, [crewId, myId]);
+
+  // --- Ältere Nachrichten ----------------------------------------------------
+  const loadOlder = useCallback(async () => {
+    if (!hasMore || loadingOlder) return;
+    const oldest = messages.find((m) => m.status === 'sent' || !m.status);
+    if (!oldest) return;
+    setLoadingOlder(true);
+    try {
+      const page = await loadOlderMessages(session, crewId, oldest.id);
+      setMessages((prev) => {
+        const known = new Set(prev.map((m) => m.id));
+        const older = page.messages.filter((m) => !known.has(m.id)).map((m) => ({ ...m, status: 'sent' as const }));
+        return [...older, ...prev];
+      });
+      setHasMore(page.hasMore);
+    } catch {
+      // nächster Versuch beim nächsten Hochscrollen
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [hasMore, loadingOlder, messages, session, crewId]);
 
   // --- Senden ----------------------------------------------------------------
-  const emitMessage = useCallback((clientId: string, text: string) => {
-    socket
-      .timeout(ACK_TIMEOUT_MS)
-      .emit('message:send', { clientId, text }, (err: Error | null, res?: SendAck) => {
-        if (err || !res?.ok || !res.message) {
-          setMessages((prev) =>
-            prev.map((m) => (m.clientId === clientId ? { ...m, status: 'failed' } : m)),
-          );
-          return;
-        }
-        setMessages((prev) => upsertMessage(prev, res.message!));
-      });
+  const markFailed = useCallback((clientId: string) => {
+    setMessages((prev) => prev.map((m) => (m.clientId === clientId ? { ...m, status: 'failed' } : m)));
   }, []);
+
+  /** Medien hochladen (falls nötig) und Nachricht an den Server schicken */
+  const deliver = useCallback(
+    async (clientId: string) => {
+      const pending = pendingSends.current[clientId];
+      if (!pending) return;
+      const { text, replyToId, media } = pending;
+      try {
+        let imageId: string | undefined;
+        let audioId: string | undefined;
+        if (media && !media.uploadedId) {
+          if (media.kind === 'image') {
+            const uploaded = await uploadImage(session, crewId, await prepareImage(media.picked));
+            media.uploadedId = uploaded.id;
+          } else {
+            const uploaded = await uploadAudio(session, crewId, media.uri, media.durationMs);
+            media.uploadedId = uploaded.id;
+          }
+        }
+        if (media?.kind === 'image') imageId = media.uploadedId;
+        if (media?.kind === 'audio') audioId = media.uploadedId;
+
+        socket
+          .timeout(ACK_TIMEOUT_MS)
+          .emit(
+            'message:send',
+            { crewId, clientId, text, imageId, audioId, replyToId },
+            (err: Error | null, res?: SendAck) => {
+              if (err || !res?.ok || !res.message) return markFailed(clientId);
+              delete pendingSends.current[clientId];
+              setMessages((prev) => upsertMessage(prev, res.message!));
+            },
+          );
+      } catch {
+        markFailed(clientId);
+      }
+    },
+    [session, crewId, markFailed],
+  );
 
   const stopTyping = useCallback(() => {
     if (ownTypingTimer.current) clearTimeout(ownTypingTimer.current);
     if (ownIsTyping.current) {
       ownIsTyping.current = false;
-      socket.emit('typing', { isTyping: false });
+      socket.emit('typing', { crewId, isTyping: false });
     }
-  }, []);
+  }, [crewId]);
 
-  const sendMessage = useCallback(
-    (raw: string) => {
-      const text = raw.trim().slice(0, MAX_LENGTH);
-      const me = userRef.current;
-      if (!text || !me) return;
-      stopTyping();
+  /** Optimistische Nachricht anzeigen und senden */
+  const queue = useCallback(
+    (fields: Pick<ChatMessage, 'text' | 'image' | 'audio'>, replyTo?: ChatMessage, media?: PendingMedia) => {
       const clientId = makeClientId();
+      pendingSends.current[clientId] = { text: fields.text, replyToId: replyTo?.id, media };
       setMessages((prev) => [
         ...prev,
         {
           id: clientId,
           clientId,
-          senderId: me.id,
-          sender: me.name,
-          text,
+          crewId,
+          senderId: myId,
+          sender: myName,
+          ...fields,
+          replyTo: replyTo ? toReplyPreview(replyTo) : undefined,
+          reactions: [],
           createdAt: new Date().toISOString(),
           status: 'pending',
         },
       ]);
-      emitMessage(clientId, text);
+      deliver(clientId);
     },
-    [emitMessage, stopTyping],
+    [crewId, myId, myName, deliver],
+  );
+
+  const sendMessage = useCallback(
+    (raw: string, replyTo?: ChatMessage) => {
+      const text = raw.trim().slice(0, MAX_LENGTH);
+      if (!text) return;
+      stopTyping();
+      queue({ text }, replyTo);
+    },
+    [queue, stopTyping],
+  );
+
+  const sendImage = useCallback(
+    (picked: PickedImage, caption = '', replyTo?: ChatMessage) => {
+      const text = caption.trim().slice(0, MAX_LENGTH);
+      queue(
+        { text, image: { id: '', width: picked.width, height: picked.height, localUri: picked.uri } },
+        replyTo,
+        { kind: 'image', picked },
+      );
+    },
+    [queue],
+  );
+
+  const sendVoice = useCallback(
+    (uri: string, durationMs: number, replyTo?: ChatMessage) => {
+      queue({ text: '', audio: { id: '', durationMs, localUri: uri } }, replyTo, { kind: 'audio', uri, durationMs });
+    },
+    [queue],
   );
 
   const retryMessage = useCallback(
     (clientId: string) => {
-      const msg = messages.find((m) => m.clientId === clientId);
-      if (!msg) return;
-      setMessages((prev) =>
-        prev.map((m) => (m.clientId === clientId ? { ...m, status: 'pending' } : m)),
-      );
-      emitMessage(clientId, msg.text);
+      if (!pendingSends.current[clientId]) return;
+      setMessages((prev) => prev.map((m) => (m.clientId === clientId ? { ...m, status: 'pending' } : m)));
+      deliver(clientId);
     },
-    [messages, emitMessage],
+    [deliver],
+  );
+
+  // --- Bearbeiten & Löschen (nur eigene) ------------------------------------
+  /** Lokal sofort ändern; bei Fehler zurück auf den alten Stand. -> true, wenn der Server zugestimmt hat */
+  const changeMessage = useCallback(
+    (event: 'message:edit' | 'message:delete', messageId: string, optimistic: Partial<ChatMessage>, payload: object) =>
+      new Promise<boolean>((resolve) => {
+        const before = messages.find((m) => m.id === messageId);
+        if (!before) return resolve(false);
+        setMessages((prev) => applyUpdate(prev, { ...before, ...optimistic }));
+        socket
+          .timeout(ACK_TIMEOUT_MS)
+          .emit(event, { messageId, ...payload }, (err: Error | null, res?: SendAck) => {
+            if (!err && res?.ok && res.message) {
+              setMessages((prev) => applyUpdate(prev, res.message!));
+              resolve(true);
+            } else {
+              setMessages((prev) => applyUpdate(prev, before));
+              resolve(false);
+            }
+          });
+      }),
+    [messages],
+  );
+
+  const editMessage = useCallback(
+    (messageId: string, raw: string) => {
+      const text = raw.trim().slice(0, MAX_LENGTH);
+      return changeMessage('message:edit', messageId, { text, edited: true }, { text });
+    },
+    [changeMessage],
+  );
+
+  const deleteMessage = useCallback(
+    (messageId: string) =>
+      changeMessage(
+        'message:delete',
+        messageId,
+        { deleted: true, text: '', image: undefined, audio: undefined, reactions: [] },
+        {},
+      ),
+    [changeMessage],
+  );
+
+  // --- Reaktionen ------------------------------------------------------------
+  const toggleReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      const before = messages.find((m) => m.id === messageId)?.reactions;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, reactions: toggleLocal(m.reactions, emoji, myId) } : m)),
+      );
+      socket
+        .timeout(ACK_TIMEOUT_MS)
+        .emit(
+          'reaction:toggle',
+          { messageId, emoji },
+          (err: Error | null, res?: { ok: boolean; reactions?: Reaction[] }) => {
+            // Bei Fehler zurücksetzen, sonst Stand vom Server übernehmen
+            const reactions = !err && res?.ok ? res.reactions : before;
+            setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions } : m)));
+          },
+        );
+    },
+    [messages, myId],
   );
 
   // --- Tippt gerade… ---------------------------------------------------------
@@ -217,19 +451,28 @@ export function useChat(session: Session | null, { onUnauthorized }: Options = {
     if (!socket.connected) return;
     if (!ownIsTyping.current) {
       ownIsTyping.current = true;
-      socket.emit('typing', { isTyping: true });
+      socket.emit('typing', { crewId, isTyping: true });
     }
     if (ownTypingTimer.current) clearTimeout(ownTypingTimer.current);
     ownTypingTimer.current = setTimeout(stopTyping, TYPING_IDLE_MS);
-  }, [stopTyping]);
+  }, [crewId, stopTyping]);
 
   return {
     messages,
-    connection,
+    loaded,
+    hasMore,
+    loadingOlder,
+    loadOlder,
     online,
+    readStates,
     typingUsers: Object.values(typing),
     sendMessage,
+    sendImage,
+    sendVoice,
     retryMessage,
+    editMessage,
+    deleteMessage,
+    toggleReaction,
     notifyTyping,
     maxLength: MAX_LENGTH,
   };

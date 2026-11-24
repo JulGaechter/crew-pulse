@@ -38,6 +38,17 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "cead5aea-ea62-4174-9edb-7cd33afe637d"
+      }
+    },
+    "owner": "julgaechters-team"
   }
 }
